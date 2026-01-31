@@ -1,0 +1,297 @@
+package v1alpha1
+
+import (
+	"fmt"
+	"net"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	mnetv1beta1 "github.com/k8snetworkplumbingwg/multi-networkpolicy/pkg/apis/k8s.cni.cncf.io/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+// CIDR represents a network range in CIDR (Classless Inter-Domain Routing) notation.
+// It consists of an IP address and a Prefix (prefix length) that defines the size of the network.
+type CIDR struct {
+	IP     net.IP
+	Prefix int
+}
+
+func NewCIDR(cidr string) (*CIDR, error) {
+	ip, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return nil, err
+	}
+	prefix, _ := ipNet.Mask.Size()
+	return &CIDR{
+		IP:     ip,
+		Prefix: prefix,
+	}, nil
+}
+
+func MustCIDR(cidr string) *CIDR {
+	if c, err := NewCIDR(cidr); err != nil {
+		panic(err)
+	} else {
+		return c
+	}
+}
+
+// String returns the string representation of the CIDR
+func (c *CIDR) String() string {
+	return fmt.Sprintf("%s/%d", c.IP.String(), c.Prefix)
+}
+
+// IsPrivate returns true if the CIDR is a private address
+func (c *CIDR) IsPrivate() bool {
+	return c.IP.IsPrivate()
+}
+
+type CIDRList []*CIDR
+
+func (l CIDRList) String() []string {
+	var result []string
+	for _, cidr := range l {
+		result = append(result, cidr.String())
+	}
+	return result
+}
+
+// Valid returns true if the FQDN is valid
+func (f *FQDN) Valid() bool {
+	labelRegexp := regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+	labels := strings.Split(string(*f), ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels {
+		if len(label) == 0 || !labelRegexp.MatchString(label) {
+			return false
+		}
+	}
+	return true
+}
+
+func isAllowed(cidrString string, globalBlock bool, ruleBlock *bool) bool {
+	blockPrivateIP := globalBlock
+	if ruleBlock != nil {
+		blockPrivateIP = *ruleBlock
+	}
+	cidr, err := NewCIDR(cidrString)
+	if err != nil {
+		return false
+	}
+	if cidr.IsPrivate() && blockPrivateIP {
+		return false
+	}
+	return true
+}
+
+func sortPeersByCIDR(peers []mnetv1beta1.MultiNetworkPolicyPeer) {
+	sort.SliceStable(peers, func(i, j int) bool {
+		// Make sure both peers have IPBlocks
+		if peers[i].IPBlock == nil {
+			return false
+		}
+		if peers[j].IPBlock == nil {
+			return true
+		}
+		return peers[i].IPBlock.CIDR < peers[j].IPBlock.CIDR
+	})
+}
+
+func getPeers(fqdns []FQDN, ips map[FQDN]*FQDNStatus, globalBlock bool, ruleBlock *bool) []mnetv1beta1.MultiNetworkPolicyPeer {
+	var peers []mnetv1beta1.MultiNetworkPolicyPeer
+
+	for _, fqdn := range fqdns {
+		if status, ok := ips[fqdn]; ok {
+			for _, addr := range status.Addresses {
+				if isAllowed(addr, globalBlock, ruleBlock) {
+					peers = append(peers, mnetv1beta1.MultiNetworkPolicyPeer{IPBlock: &mnetv1beta1.IPBlock{
+						CIDR: addr,
+					}})
+				}
+			}
+		}
+	}
+	sortPeersByCIDR(peers)
+	return peers
+}
+
+// toNetworkPolicyEgressRule converts the EgressRule to a netv1.NetworkPolicyEgressRule.
+// Returns nil if no peers were found.
+func (r *EgressRule) toMultiNetworkPolicyEgressRule(ips map[FQDN]*FQDNStatus, blockPrivate bool) *mnetv1beta1.MultiNetworkPolicyEgressRule {
+	peers := getPeers(r.ToFQDNs, ips, blockPrivate, r.BlockPrivateIPs)
+	if len(peers) == 0 {
+		return nil
+	}
+
+	/*
+		external := []mnetv1beta1.MultiNetworkPolicyPort{}
+		for _, local := range r.Ports {
+			temp := intstr.Parse(local.Port)
+			p := mnetv1beta1.MultiNetworkPolicyPort{
+				Port:     &temp,
+				Protocol: local.Protocol,
+				EndPort:  nil,
+			}
+			external = append(external, p)
+		}*/
+
+	external := []mnetv1beta1.MultiNetworkPolicyPort{}
+	for _, local := range r.Ports {
+		if local.Port != nil {
+			temp := intstr.FromInt(int(*local.Port))
+			p := mnetv1beta1.MultiNetworkPolicyPort{
+				Port:     &temp,
+				Protocol: local.Protocol,
+				EndPort:  nil,
+			}
+			external = append(external, p)
+		}
+	}
+
+	return &mnetv1beta1.MultiNetworkPolicyEgressRule{
+		Ports: external,
+		To:    peers,
+	}
+}
+
+// FQDNs Returns all unique FQDNs defined in the network policy
+func (np *NetworkPolicy) FQDNs() []FQDN {
+	set := make(map[FQDN]struct{})
+	for _, rule := range np.Spec.Egresses {
+		for _, fqdn := range rule.ToFQDNs {
+			set[fqdn] = struct{}{}
+		}
+	}
+
+	fqdns := make([]FQDN, 0, len(set))
+	for fqdn := range set {
+		fqdns = append(fqdns, fqdn)
+	}
+
+	sort.SliceStable(fqdns, func(i, j int) bool {
+		return fqdns[i] < fqdns[j]
+	})
+
+	return fqdns
+}
+
+// ToNetworkPolicy converts the NetworkPolicy to a netv1.NetworkPolicy.
+// If no Egress rules are specified, nil is returned.
+func (np *NetworkPolicy) ToMultiNetworkPolicy(fqdnStatuses []FQDNStatus) *mnetv1beta1.MultiNetworkPolicy {
+	if len(np.Spec.Egresses) == 0 {
+		return nil
+	}
+
+	lookup := FQDNStatusList(fqdnStatuses).LookupTable()
+	var egress []mnetv1beta1.MultiNetworkPolicyEgressRule
+	for _, fqdnRule := range np.Spec.Egresses {
+		if rule := fqdnRule.toMultiNetworkPolicyEgressRule(lookup, np.Spec.BlockPrivateIPs); rule != nil {
+			egress = append(egress, *rule)
+		}
+	}
+
+	// 由于OpenShift控制台界面显示并传入的只有EndPort的值，因此这里将EndPort的值赋予给Port，希望在下面生成MultiNetworkPolicy的时候能将Port的值带入
+	// EndPort的本义是结束的端口号，是相对于Port而言的，比如Port为8080，EndPort为8090，则端口8080~8090均满足条件
+	// 当EndPort和Port为相同值的时候，范围就收窄为一个端口
+	// 由于OpenShift控制台界面的Bug，只显示EndPort的输入并回传，不显示Port的输入也没办法回传，因此在创建MultiNetworkPolicy的前一刻，强制将EndPort的值赋予Port，迂回的解决问题
+	/*for i, rule := range egress {
+		for j := range rule.Ports {
+			if egress[i].Ports[j].EndPort != nil {
+				temp := intstr.FromInt(int(*egress[i].Ports[j].EndPort))
+				egress[i].Ports[j].Port = &temp
+			}
+		}
+	}*/
+
+	selectorMap := make(map[string]string, len(np.Spec.MatchLabels))
+
+	for _, item := range np.Spec.MatchLabels {
+		selectorMap[string(item.Label)] = item.Value
+	}
+
+	external := make([]metav1.LabelSelectorRequirement, len(np.Spec.MatchExpressions))
+	for i, item := range np.Spec.MatchExpressions {
+		external[i].Key = item.Key
+		external[i].Operator = item.Operator
+		//external[i].Values = item.Values
+
+		external[i].Values = make([]string, len(item.Values))
+		for j, v := range item.Values {
+			external[i].Values[j] = string(v)
+		}
+	}
+
+	return &mnetv1beta1.MultiNetworkPolicy{
+		ObjectMeta: np.ObjectMeta,
+		Spec: mnetv1beta1.MultiNetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels:      selectorMap,
+				MatchExpressions: external,
+			},
+			Egress:      egress,
+			PolicyTypes: []mnetv1beta1.MultiPolicyType{mnetv1beta1.PolicyTypeEgress},
+		},
+	}
+}
+
+// Update updates the status of the FQDN.
+// If addresses were cleared due to an error during the update, the method returns true.
+func (f *FQDNStatus) Update(
+	cidrs []*CIDR, reason NetworkPolicyResolvedConditionReason, message string, retryTimeoutSeconds int,
+) bool {
+	cleared := false
+	if reason == NetworkPolicyResolveSuccess {
+		f.LastSuccessfulTime = metav1.Now()
+		f.Addresses = CIDRList(cidrs).String()
+	}
+	// On transient errors we want to adhere to the retry timeout specification
+	if reason != NetworkPolicyResolveSuccess && reason.Transient() {
+		retryLimitReached := time.Now().After(
+			f.LastSuccessfulTime.Add(time.Duration(retryTimeoutSeconds) * time.Second),
+		)
+
+		if retryLimitReached {
+			f.Addresses = []string{}
+			cleared = true
+		}
+	}
+	// On non-transient errors we clear the addresses immediately
+	if reason != NetworkPolicyResolveSuccess && !reason.Transient() {
+		f.Addresses = []string{}
+		cleared = true
+	}
+	if f.ResolveReason != reason {
+		f.LastTransitionTime = metav1.Now()
+	}
+	f.ResolveReason = reason
+	f.ResolveMessage = message
+	return cleared
+}
+
+func NewFQDNStatus(fqdn FQDN, cidrs []*CIDR, reason NetworkPolicyResolvedConditionReason, message string) FQDNStatus {
+	timeNow := metav1.Now()
+	return FQDNStatus{
+		FQDN:               fqdn,
+		LastSuccessfulTime: timeNow,
+		LastTransitionTime: timeNow,
+		ResolveReason:      reason,
+		ResolveMessage:     message,
+		Addresses:          CIDRList(cidrs).String(),
+	}
+}
+
+type FQDNStatusList []FQDNStatus
+
+func (s FQDNStatusList) LookupTable() map[FQDN]*FQDNStatus {
+	lookupTable := make(map[FQDN]*FQDNStatus)
+	for _, status := range s {
+		lookupTable[status.FQDN] = &status
+	}
+	return lookupTable
+}

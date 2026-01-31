@@ -1,0 +1,32 @@
+apiVersion: networking.turbosimone.com/v1alpha1
+kind: NetworkPolicy
+metadata:
+  name: allow-rhel9-egress-redhat
+spec:
+  targetNetwork: cudn-localnet2
+  matchExpressions:
+    - key: vm.kubevirt.io/name
+      operator: In
+      values:
+        - rhel9-minimum
+        - rhel9-gui-server
+  egress:
+    - toFQDNs:
+        - dns.example.com
+      ports:
+        - protocol: UDP
+          port: 53
+    - toFQDNs:
+        - www.redhat.com
+        - consent-pref.trustarc.com
+        - consent.trustarc.com
+        - static.redhat.com
+        - sso.redhat.com
+        - assets.adobedtm.com
+        - consent-st.trustarc.com
+        - adobedc.demdex.net
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80

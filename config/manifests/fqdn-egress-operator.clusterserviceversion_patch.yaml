@@ -1,0 +1,79 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  name: fqdn-egress-operator.v0.0.0
+  namespace: placeholder
+spec:
+  customresourcedefinitions:
+    owned:
+    - description: |-
+        NetworkPolicy is the Schema for the networkpolicies API.
+
+          - Please ensure the pods you apply this network policy to have a separate policy allowing access to CoreDNS / KubeDNS pods in your cluster. Without this, once this Network policy is applied, access to DNS will be blocked due to how network policies deny all unspecified traffic by default once applied.
+          - If no addresses are resolved from the FQDNs from the Egress rules that were specified, the default behavior is to block all Egress traffic. This conforms with the default behavior of network policies (networking.k8s.io/v1).
+      displayName: Network Policy
+      kind: NetworkPolicy
+      name: networkpolicies.networking.turbosimone.com
+      version: v1alpha1
+      specDescriptors:
+      - displayName: Target Network
+        path: targetNetwork
+        description: TargetNetwork represents the network where the network policy is effective. If the list is empty, please confirm whether a NAD has been created in the current project.
+        x-descriptors:
+        - urn:alm:descriptor:io.kubernetes:k8s.cni.cncf.io:v1:NetworkAttachmentDefinition
+      - displayName: Match Labels
+        path: matchLabels
+      - displayName: Label
+        path: matchLabels[0].label
+      - displayName: Value
+        path: matchLabels[0].value
+      - displayName: Match Expressions
+        path: matchExpressions
+      - displayName: Key
+        path: matchExpressions[0].key
+      - displayName: Operator
+        path: matchExpressions[0].operator
+      - displayName: Values
+        path: matchExpressions[0].values
+      - displayName: Value
+        path: matchExpressions[0].values[0]
+      - displayName: Egress
+        path: egress
+      - displayName: ToFQDNs
+        path: egress[0].toFQDNs
+      - displayName: FQDN
+        path: egress[0].toFQDNs[0]
+      - displayName: Ports
+        path: egress[0].ports
+      - displayName: Protocol
+        path: egress[0].ports[0].protocol
+      - displayName: Port
+        path: egress[0].ports[0].port
+      - displayName: Block Private IPs
+        path: egress[0].blockPrivateIPs
+      - displayName: Enabled Network Type
+        path: enabledNetworkType
+      - displayName: Resolve Timeout Seconds
+        path: resolveTimeoutSeconds
+      - displayName: Retry Timeout Seconds
+        path: retryTimeoutSeconds
+      - displayName: TTL Seconds
+        path: ttlSeconds
+      - displayName: Block Private IPs
+        path: blockPrivateIPs
+#      - displayName: Pod Selector
+#        path: podSelector
+#      - displayName: Match Expressions
+#        description: MatchExpressions is a list of label selector requirements. The requirements are ANDed.
+#        path: podSelector.matchExpressions
+#      - displayName: Key
+#        description: Key is the label key that the selector applies to.
+#        path: podSelector.matchExpressions[0].key
+#      - displayName: Operator
+#        description: Operator represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists and DoesNotExist.
+#        path: podSelector.matchExpressions[0].operator
+#      - displayName: Values
+#        description: Values is an array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. This array is replaced during a strategic merge patch.
+#        path: podSelector.matchExpressions[0].values
+#      - displayName: Value
+#        path: podSelector.matchExpressions[0].values[0]
