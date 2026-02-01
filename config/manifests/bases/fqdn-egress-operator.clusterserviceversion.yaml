@@ -5,7 +5,7 @@ metadata:
     alm-examples: '[]'
     capabilities: Seamless Upgrades
     categories: Networking, Security, Monitoring
-    containerImage: quay.io/ecosystem2022/fqdn-egress-controller:v1.0.0
+    containerImage: quay.io/ecosystem2022/fqdn-egress-operator:v1.0.0
   name: fqdn-egress-operator.v0.0.0
   namespace: placeholder
 spec:

@@ -62,8 +62,8 @@ metadata:
       ]
     capabilities: Seamless Upgrades
     categories: Networking, Security, Monitoring
-    containerImage: quay.io/ecosystem2022/fqdn-egress-controller:v1.0.0
-    createdAt: "2026-02-01T04:56:32Z"
+    containerImage: quay.io/ecosystem2022/fqdn-egress-operator:v1.0.0
+    createdAt: "2026-02-01T07:46:16Z"
     operators.operatorframework.io/builder: operator-sdk-v1.42.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: fqdn-egress-operator.v1.0.0
@@ -271,7 +271,7 @@ spec:
                 - --health-probe-bind-address=:8081
                 command:
                 - /manager
-                image: quay.io/ecosystem2022/fqdn-egress-controller:v1.0.0
+                image: quay.io/ecosystem2022/fqdn-egress-operator:v1.0.0
                 imagePullPolicy: Always
                 livenessProbe:
                   httpGet:
