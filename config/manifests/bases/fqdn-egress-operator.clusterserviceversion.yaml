@@ -5,7 +5,7 @@ metadata:
     alm-examples: '[]'
     capabilities: Seamless Upgrades
     categories: Networking, Security, Monitoring
-    containerImage: quay.io/turbosimone/fqdn-egress-operator:v1.0.1
+    containerImage: quay.io/turbosimone/fqdn-egress-operator:v1.0.2
     description: Creates and maintains NetworkPolicies that supports outbound flows
       based on FQDNs
     repository: https://github.com/mransonwang/fqdn-egress-operator
@@ -113,5 +113,5 @@ spec:
   minKubeVersion: 1.32.0
   provider:
     name: Feng Wang
-  replaces: fqdn-egress-operator.v1.0.0
+  replaces: fqdn-egress-operator.v1.0.1
   version: 0.0.0
