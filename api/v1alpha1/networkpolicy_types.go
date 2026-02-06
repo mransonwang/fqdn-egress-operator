@@ -84,6 +84,8 @@ type LabelSelectorRequirement struct {
 	// +kubebuilder:validation:Enum=In;NotIn
 	Operator metav1.LabelSelectorOperator `json:"operator"`
 	// Values is an array of string values. If the operator is In or NotIn, the values array must be non-empty.
+	// +kubebuilder:validation:MaxItems=50
+	// +listType=set
 	Values []LabelValue `json:"values"`
 }
 
@@ -92,11 +94,11 @@ type MultiNetworkPolicyPort struct {
 	// Protocol defines network protocols supported for things like container ports.
 	// +kubebuilder:default="TCP"
 	// +kubebuilder:validation:Enum=TCP;UDP;SCTP
-	Protocol *corev1.Protocol `json:"protocol"`
+	Protocol corev1.Protocol `json:"protocol"`
 	// The specific port number to allow.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
-	Port *int32 `json:"port"`
+	Port int32 `json:"port"`
 }
 
 // FQDN is short for Fully Qualified Domain Name and represents a complete domain name that uniquely identifies a host on the internet. It must consist of one or more labels separated by dots (e.g., "api.example.com"), where each label can contain letters, digits, and hyphens, but cannot start or end with a hyphen. The FQDN must end with a top-level domain (e.g., ".com", ".org") of at least two characters.
@@ -109,8 +111,13 @@ type FQDN string
 type EgressRule struct {
 	// ToFQDNs are the FQDNs to which traffic is allowed (outgoing).
 	// +kubebuilder:validation:MaxItems=50
+	// +listType=set
 	ToFQDNs []FQDN `json:"toFQDNs"`
 	// Ports describes the ports to allow traffic on.
+	// +kubebuilder:validation:MaxItems=10
+	// +listType=map
+	// +listMapKey=protocol
+	// +listMapKey=port
 	Ports []MultiNetworkPolicyPort `json:"ports"`
 	// When set, overwrites the default behavior of the same field in NetworkPolicySpec.
 	BlockPrivateIPs *bool `json:"blockPrivateIPs,omitempty"`
@@ -129,13 +136,18 @@ type NetworkPolicySpec struct {
 	// +kubebuilder:validation:Optional
 	// +listType=map
 	// +listMapKey=label
+	// +listMapKey=value
 	MatchLabels []MatchLabel `json:"matchLabels,omitempty"`
 
 	// MatchExpressions defines which pods this network policy shall apply to.
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:MaxItems=30
+	// +kubebuilder:validation:XValidation:rule="self.all(i, self.filter(j, i.key == j.key && i.operator == j.operator && j.values.exists(v, v in i.values)).size() == 1)",message="spec.matchExpressions in body should not contain overlapping values for the same key and operator"
 	MatchExpressions []LabelSelectorRequirement `json:"matchExpressions,omitempty"`
 
 	// Egresses defines the outbound network traffic rules for the selected pods.
+	// +kubebuilder:validation:MaxItems=30
+	// +kubebuilder:validation:XValidation:rule="self.all(i, self.filter(j, j.toFQDNs.exists(f, f in i.toFQDNs) && j.ports.exists(p, p in i.ports)).size() == 1)",message="spec.egress in body should not contain overlapping toFQDNs and ports across different rules"	
 	Egresses []EgressRule `json:"egress"`
 
 	// EnabledNetworkType defines which type of IP addresses to allow.

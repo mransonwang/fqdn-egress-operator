@@ -143,15 +143,13 @@ func (r *EgressRule) toMultiNetworkPolicyEgressRule(ips map[FQDN]*FQDNStatus, bl
 
 	external := []mnetv1beta1.MultiNetworkPolicyPort{}
 	for _, local := range r.Ports {
-		if local.Port != nil {
-			temp := intstr.FromInt(int(*local.Port))
-			p := mnetv1beta1.MultiNetworkPolicyPort{
-				Port:     &temp,
-				Protocol: local.Protocol,
-				EndPort:  nil,
-			}
-			external = append(external, p)
+		temp := intstr.FromInt(int(local.Port))
+		p := mnetv1beta1.MultiNetworkPolicyPort{
+			Port:     &temp,
+			Protocol: &local.Protocol,
+			EndPort:  nil,
 		}
+		external = append(external, p)
 	}
 
 	return &mnetv1beta1.MultiNetworkPolicyEgressRule{

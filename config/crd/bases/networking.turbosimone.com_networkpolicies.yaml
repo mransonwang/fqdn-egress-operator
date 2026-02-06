@@ -112,7 +112,12 @@ spec:
                         - port
                         - protocol
                         type: object
+                      maxItems: 10
                       type: array
+                      x-kubernetes-list-map-keys:
+                      - protocol
+                      - port
+                      x-kubernetes-list-type: map
                     toFQDNs:
                       description: ToFQDNs are the FQDNs to which traffic is allowed
                         (outgoing).
@@ -128,11 +133,18 @@ spec:
                         type: string
                       maxItems: 50
                       type: array
+                      x-kubernetes-list-type: set
                   required:
                   - ports
                   - toFQDNs
                   type: object
+                maxItems: 30
                 type: array
+                x-kubernetes-validations:
+                - message: spec.egress in body should not contain overlapping toFQDNs
+                    and ports across different rules
+                  rule: self.all(i, self.filter(j, j.toFQDNs.exists(f, f in i.toFQDNs)
+                    && j.ports.exists(p, p in i.ports)).size() == 1)
               enabledNetworkType:
                 default: ipv4
                 description: |-
@@ -174,13 +186,21 @@ spec:
                         description: The value corresponding to the label.
                         minLength: 1
                         type: string
+                      maxItems: 50
                       type: array
+                      x-kubernetes-list-type: set
                   required:
                   - key
                   - operator
                   - values
                   type: object
+                maxItems: 30
                 type: array
+                x-kubernetes-validations:
+                - message: spec.matchExpressions in body should not contain overlapping
+                    values for the same key and operator
+                  rule: self.all(i, self.filter(j, i.key == j.key && i.operator ==
+                    j.operator && j.values.exists(v, v in i.values)).size() == 1)
               matchLabels:
                 description: MatchLabels defines which pods this network policy shall
                   apply to.
@@ -205,6 +225,7 @@ spec:
                 type: array
                 x-kubernetes-list-map-keys:
                 - label
+                - value
                 x-kubernetes-list-type: map
               resolveTimeoutSeconds:
                 default: 3
