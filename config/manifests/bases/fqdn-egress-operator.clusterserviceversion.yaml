@@ -6,6 +6,10 @@ metadata:
     capabilities: Seamless Upgrades
     categories: Networking, Security, Monitoring
     containerImage: quay.io/turbosimone/fqdn-egress-operator:v1.0.1
+    description: Creates and maintains NetworkPolicies that supports outbound flows
+      based on FQDNs
+    repository: https://github.com/mransonwang/fqdn-egress-operator
+    support: Community
   name: fqdn-egress-operator.v0.0.0
   namespace: placeholder
 spec:
