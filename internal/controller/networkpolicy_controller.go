@@ -113,7 +113,8 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	networkPolicy := np.ToMultiNetworkPolicy(np.Status.FQDNs)
 
 	np.Status.TotalAddressCount = int32(len(results.CIDRs()))
-	np.Status.AppliedAddressCount = int32(len(utils.UniqueCidrsInNetworkPolicy(networkPolicy)))
+	utils.RemoveDuplicateCidrsInNetworkPolicy(networkPolicy)
+	np.Status.AppliedAddressCount = int32((utils.CountDeDupedAddresses(networkPolicy)))
 	np.Status.LatestLookupTime = metav1.NewTime(time.Now())
 
 	// Set the resolve status condition
@@ -130,8 +131,6 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		"applied", np.Status.AppliedAddressCount,
 	)
 	logf.IntoContext(ctx, logger)
-
-	utils.RemoveDuplicateCidrsInNetworkPolicy(networkPolicy)
 
 	// The network policy does not define any Egress rules, delete network policy if it exists
 	if networkPolicy == nil {

@@ -9,6 +9,10 @@ import (
 )
 
 func typeName(obj interface{}) string {
+	if obj == nil {
+		return "Unknown"
+	}
+
 	t := reflect.TypeOf(obj)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -27,9 +31,7 @@ func OperationReason(object client.Object, op controllerutil.OperationResult) st
 		reason = "Created"
 	case controllerutil.OperationResultUpdated:
 		reason = "Updated"
-	case controllerutil.OperationResultUpdatedStatus:
-		reason = "StatusUpdated"
-	case controllerutil.OperationResultUpdatedStatusOnly:
+	case controllerutil.OperationResultUpdatedStatus, controllerutil.OperationResultUpdatedStatusOnly:
 		reason = "StatusUpdated"
 	case controllerutil.OperationResultNone:
 		reason = "Unchanged"
@@ -44,10 +46,8 @@ func OperationMessage(object client.Object, op controllerutil.OperationResult) s
 		message = "was created"
 	case controllerutil.OperationResultUpdated:
 		message = "was updated"
-	case controllerutil.OperationResultUpdatedStatus:
-		message = "had it's status updated"
-	case controllerutil.OperationResultUpdatedStatusOnly:
-		message = "had it's status updated"
+	case controllerutil.OperationResultUpdatedStatus, controllerutil.OperationResultUpdatedStatusOnly:
+		message = "had its status updated"
 	case controllerutil.OperationResultNone:
 		message = "is unchanged"
 	}
