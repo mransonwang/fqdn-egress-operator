@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/mransonwang/fqdn-egress-operator/pkg/network"
@@ -182,6 +183,9 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 func (r *NetworkPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.NetworkPolicy{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Named("fqdnnetworkpolicy").
+		Named("fqdn-egress-operator").
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 5,
+		}).
 		Complete(r)
 }

@@ -10,7 +10,8 @@ COPY go.sum go.sum
 # cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer
 RUN go mod download
-RUN go get github.com/k8snetworkplumbingwg/multi-networkpolicy/pkg/apis/k8s.cni.cncf.io/v1beta1
+#RUN go get github.com/k8snetworkplumbingwg/multi-networkpolicy/pkg/apis/k8s.cni.cncf.io/v1beta1
+#RUN go get go.uber.org/automaxprocs/maxprocs
 
 # Copy the go source
 COPY cmd/main.go cmd/main.go

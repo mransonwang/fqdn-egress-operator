@@ -19,9 +19,12 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 
+	"go.uber.org/automaxprocs/maxprocs"
+	
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -43,6 +46,7 @@ import (
 	networkingv1alpha1 "github.com/mransonwang/fqdn-egress-operator/api/v1alpha1"
 	"github.com/mransonwang/fqdn-egress-operator/internal/controller"
 	"github.com/mransonwang/fqdn-egress-operator/pkg/network"
+	klog "k8s.io/klog/v2"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -95,13 +99,19 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	mainLogger := zap.New(zap.UseFlagOptions(&opts))
+	ctrl.SetLogger(mainLogger)
+	klog.SetLogger(mainLogger.WithName("klog"))
+
+	_, err := maxprocs.Set(maxprocs.Logger(func(s string, i ...interface{}) {
+		setupLog.Info(fmt.Sprintf(s, i...))
+	}))
+	if err != nil {
+		setupLog.Error(err, "unable to set GOMAXPROCS")
+	}	
 
 	if maxConcurrentResolves <= 0 {
-		maxConcurrentResolves = goruntime.NumCPU()
-		if maxConcurrentResolves < 1 {
-			maxConcurrentResolves = 1
-		}
+		maxConcurrentResolves = min(max(1, goruntime.GOMAXPROCS(0)), 20)
 	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
@@ -254,7 +264,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
+	setupLog.Info("starting manager", "maxConcurrentResolves", maxConcurrentResolves)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
