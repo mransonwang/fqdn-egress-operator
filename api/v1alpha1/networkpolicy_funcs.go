@@ -244,12 +244,12 @@ func (f *FQDNStatus) Update(
 	cidrs []*CIDR, reason NetworkPolicyResolvedConditionReason, message string, retryTimeoutSeconds int,
 ) bool {
 	cleared := false
-	if reason == NetworkPolicyResolveSuccess {
+	if reason == NetworkPolicyResolvedSuccess {
 		f.LastSuccessfulTime = metav1.Now()
 		f.Addresses = CIDRList(cidrs).String()
 	}
 	// On transient errors we want to adhere to the retry timeout specification
-	if reason != NetworkPolicyResolveSuccess && reason.Transient() {
+	if reason != NetworkPolicyResolvedSuccess && reason.Transient() {
 		retryLimitReached := time.Now().After(
 			f.LastSuccessfulTime.Add(time.Duration(retryTimeoutSeconds) * time.Second),
 		)
@@ -260,15 +260,15 @@ func (f *FQDNStatus) Update(
 		}
 	}
 	// On non-transient errors we clear the addresses immediately
-	if reason != NetworkPolicyResolveSuccess && !reason.Transient() {
+	if reason != NetworkPolicyResolvedSuccess && !reason.Transient() {
 		f.Addresses = []string{}
 		cleared = true
 	}
-	if f.ResolveReason != reason {
+	if f.ResolvedReason != reason {
 		f.LastTransitionTime = metav1.Now()
 	}
-	f.ResolveReason = reason
-	f.ResolveMessage = message
+	f.ResolvedReason = reason
+	f.ResolvedMessage = message
 	return cleared
 }
 
@@ -278,8 +278,8 @@ func NewFQDNStatus(fqdn FQDN, cidrs []*CIDR, reason NetworkPolicyResolvedConditi
 		FQDN:               fqdn,
 		LastSuccessfulTime: timeNow,
 		LastTransitionTime: timeNow,
-		ResolveReason:      reason,
-		ResolveMessage:     message,
+		ResolvedReason:     reason,
+		ResolvedMessage:    message,
 		Addresses:          CIDRList(cidrs).String(),
 	}
 }

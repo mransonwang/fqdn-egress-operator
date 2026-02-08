@@ -9,7 +9,7 @@ import (
 // If the reason indicates success, the status is set to True with a standard success message.
 func (np *NetworkPolicy) SetResolveCondition(reason NetworkPolicyResolvedConditionReason, message string) {
 	condition := metav1.ConditionFalse
-	if reason == NetworkPolicyResolveSuccess {
+	if reason == NetworkPolicyResolvedSuccess {
 		condition = metav1.ConditionTrue
 		message = "The network policy resolved successfully."
 	}

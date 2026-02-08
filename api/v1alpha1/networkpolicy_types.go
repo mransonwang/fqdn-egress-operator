@@ -215,28 +215,28 @@ const (
 type NetworkPolicyResolvedConditionReason string
 
 const (
-	NetworkPolicyResolveOtherError     NetworkPolicyResolvedConditionReason = "OTHER_ERROR"
-	NetworkPolicyResolveInvalidDomain  NetworkPolicyResolvedConditionReason = "INVALID_DOMAIN"
-	NetworkPolicyResolveDomainNotFound NetworkPolicyResolvedConditionReason = "NXDOMAIN"
-	NetworkPolicyResolveTimeout        NetworkPolicyResolvedConditionReason = "TIMEOUT"
-	NetworkPolicyResolveTemporaryError NetworkPolicyResolvedConditionReason = "TEMPORARY"
-	NetworkPolicyResolveUnknown        NetworkPolicyResolvedConditionReason = "UNKNOWN"
-	NetworkPolicyResolveSuccess        NetworkPolicyResolvedConditionReason = "SUCCESS"
+	NetworkPolicyResolvedOtherError     NetworkPolicyResolvedConditionReason = "OTHER_ERROR"
+	NetworkPolicyResolvedInvalidDomain  NetworkPolicyResolvedConditionReason = "INVALID_DOMAIN"
+	NetworkPolicyResolvedDomainNotFound NetworkPolicyResolvedConditionReason = "NXDOMAIN"
+	NetworkPolicyResolvedTimeout        NetworkPolicyResolvedConditionReason = "TIMEOUT"
+	NetworkPolicyResolvedTemporaryError NetworkPolicyResolvedConditionReason = "TEMPORARY"
+	NetworkPolicyResolvedUnknown        NetworkPolicyResolvedConditionReason = "UNKNOWN"
+	NetworkPolicyResolvedSuccess        NetworkPolicyResolvedConditionReason = "SUCCESS"
 )
 
 func (r NetworkPolicyResolvedConditionReason) Priority() int {
 	switch r {
-	case NetworkPolicyResolveOtherError:
+	case NetworkPolicyResolvedOtherError:
 		return 6
-	case NetworkPolicyResolveInvalidDomain:
+	case NetworkPolicyResolvedInvalidDomain:
 		return 5
-	case NetworkPolicyResolveDomainNotFound:
+	case NetworkPolicyResolvedDomainNotFound:
 		return 4
-	case NetworkPolicyResolveTimeout:
+	case NetworkPolicyResolvedTimeout:
 		return 3
-	case NetworkPolicyResolveTemporaryError:
+	case NetworkPolicyResolvedTemporaryError:
 		return 2
-	case NetworkPolicyResolveUnknown:
+	case NetworkPolicyResolvedUnknown:
 		return 1
 	default:
 		return 0
@@ -245,9 +245,9 @@ func (r NetworkPolicyResolvedConditionReason) Priority() int {
 
 func (r NetworkPolicyResolvedConditionReason) Transient() bool {
 	switch r {
-	case NetworkPolicyResolveInvalidDomain:
+	case NetworkPolicyResolvedInvalidDomain:
 		return false
-	case NetworkPolicyResolveDomainNotFound:
+	case NetworkPolicyResolvedDomainNotFound:
 		return false
 	default:
 		return true
@@ -258,14 +258,14 @@ func (r NetworkPolicyResolvedConditionReason) Transient() bool {
 type FQDNStatus struct {
 	// FQDN is the FQDN this status refers to
 	FQDN FQDN `json:"fqdn"`
-	// LastSuccessfulTime is the last time the FQDN was resolved successfully. I.e. the last time the ResolveReason was NetworkPolicyResolveSuccess
+	// LastSuccessfulTime is the last time the FQDN was resolved successfully. I.e. the last time the ResolvedReason was NetworkPolicyResolvedSuccess
 	LastSuccessfulTime metav1.Time `json:"LastSuccessfulTime,omitempty"`
 	// LastTransitionTime is the last time the reason changed
 	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
-	// ResolveReason describes the last resolve status
-	ResolveReason NetworkPolicyResolvedConditionReason `json:"resolvedReason,omitempty"`
-	// ResolveMessage is a message describing the reason for the status
-	ResolveMessage string `json:"resolveMessage,omitempty"`
+	// ResolvedReason describes the last resolved status
+	ResolvedReason NetworkPolicyResolvedConditionReason `json:"resolvedReason,omitempty"`
+	// ResolvedMessage is a message describing the reason for the status
+	ResolvedMessage string `json:"resolveMessage,omitempty"`
 	// Addresses is the list of resolved addresses for the given FQDN. The list is cleared if LastSuccessfulTime exceeds the time limit specified by NetworkPolicySpec.RetryTimeoutSeconds
 	Addresses []string `json:"addresses,omitempty"`
 }
@@ -304,7 +304,7 @@ type NetworkPolicyStatus struct {
 // +kubebuilder:printcolumn:name="Resolved",type=string,JSONPath=`.status.conditions[?(@.type=="Resolved")].status`,description="Resolved condition status"
 // +kubebuilder:printcolumn:name="Resolved IPs",type=integer,JSONPath=`.status.totalAddressesCount`,description="Number of resolved IPs before filtering"
 // +kubebuilder:printcolumn:name="Applied IPs",type=integer,JSONPath=`.status.appliedAddressCount`,description="Number of applied IPs"
-// +kubebuilder:printcolumn:name="Last Lookup",type=date,JSONPath=`.status.latestLookupTime`,description="Time of last FQDN resolve"
+// +kubebuilder:printcolumn:name="Last Lookup",type=date,JSONPath=`.status.latestLookupTime`,description="Time of last FQDN resolved"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type NetworkPolicy struct {
 	metav1.TypeMeta   `json:",inline"`

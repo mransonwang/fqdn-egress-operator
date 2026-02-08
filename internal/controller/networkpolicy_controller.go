@@ -117,16 +117,16 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	np.Status.AppliedAddressCount = int32((utils.CountDeDupedAddresses(networkPolicy)))
 	np.Status.LatestLookupTime = metav1.NewTime(time.Now())
 
-	// Set the resolve status condition
-	resolveStatus := results.AggregatedResolveStatus()
+	// Set the resolved status condition
+	resolvedStatus := results.AggregatedResolvedStatus()
 	np.SetResolveCondition(
-		resolveStatus,
-		results.AggregatedResolveMessage(),
+		resolvedStatus,
+		results.AggregatedResolvedMessage(),
 	)
 
 	logger := logf.FromContext(ctx).WithValues(
 		"policy", np.GetName(), "namespace", np.GetNamespace(),
-		"status", resolveStatus,
+		"status", resolvedStatus,
 		"resolved", np.Status.TotalAddressCount,
 		"applied", np.Status.AppliedAddressCount,
 	)

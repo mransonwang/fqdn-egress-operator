@@ -27,7 +27,7 @@ type DNSResolverResult struct {
 	Domain v1alpha1.FQDN
 	// Error that the lookup may have caused
 	Error error
-	// Resolve status
+	// Resolved status
 	Status v1alpha1.NetworkPolicyResolvedConditionReason
 	// Message for the reason
 	Message string
@@ -46,16 +46,16 @@ func NewDNSResolverResult(
 	return &DNSResolverResult{
 		Domain:  domain,
 		Error:   error,
-		Message: resolveMessage(error),
-		Status:  resolveReason(error),
+		Message: resolvedMessage(error),
+		Status:  resolvedReason(error),
 		CIDRs:   CIDRs,
 	}
 }
 
-// resolveReason returns the reason for the status of the resolve result
-func resolveReason(err error) v1alpha1.NetworkPolicyResolvedConditionReason {
+// resolvedReason returns the reason for the status of the resolved result
+func resolvedReason(err error) v1alpha1.NetworkPolicyResolvedConditionReason {
 	if err == nil {
-		return v1alpha1.NetworkPolicyResolveSuccess
+		return v1alpha1.NetworkPolicyResolvedSuccess
 	}
 	var lookupErr *lookupError
 	if errors.As(err, &lookupErr) {
@@ -63,22 +63,22 @@ func resolveReason(err error) v1alpha1.NetworkPolicyResolvedConditionReason {
 	}
 	var dnsErr *net.DNSError
 	if !errors.As(err, &dnsErr) {
-		return v1alpha1.NetworkPolicyResolveOtherError
+		return v1alpha1.NetworkPolicyResolvedOtherError
 	}
 	if dnsErr.IsTimeout {
-		return v1alpha1.NetworkPolicyResolveTimeout
+		return v1alpha1.NetworkPolicyResolvedTimeout
 	}
 	if dnsErr.IsNotFound {
-		return v1alpha1.NetworkPolicyResolveTimeout
+		return v1alpha1.NetworkPolicyResolvedTimeout
 	}
 	if dnsErr.IsTemporary {
-		return v1alpha1.NetworkPolicyResolveTemporaryError
+		return v1alpha1.NetworkPolicyResolvedTemporaryError
 	}
-	return v1alpha1.NetworkPolicyResolveOtherError
+	return v1alpha1.NetworkPolicyResolvedOtherError
 }
 
-// resolveMessage returns an error message for the given error
-func resolveMessage(err error) string {
+// resolvedMessage returns an error message for the given error
+func resolvedMessage(err error) string {
 	if err == nil {
 		return "Resolve succeeded"
 	}
@@ -122,9 +122,9 @@ func (dlr DNSResolverResultList) CIDRs() []*v1alpha1.CIDR {
 	return cidrs
 }
 
-// AggregatedResolveStatus returns the reason with the highest priority in the result list
-func (dlr DNSResolverResultList) AggregatedResolveStatus() v1alpha1.NetworkPolicyResolvedConditionReason {
-	reason := v1alpha1.NetworkPolicyResolveSuccess
+// AggregatedResolvedStatus returns the reason with the highest priority in the result list
+func (dlr DNSResolverResultList) AggregatedResolvedStatus() v1alpha1.NetworkPolicyResolvedConditionReason {
+	reason := v1alpha1.NetworkPolicyResolvedSuccess
 	for _, dr := range dlr {
 		if dr.Status.Priority() > reason.Priority() {
 			reason = dr.Status
@@ -133,9 +133,9 @@ func (dlr DNSResolverResultList) AggregatedResolveStatus() v1alpha1.NetworkPolic
 	return reason
 }
 
-// AggregatedResolveMessage returns the message with the highest priority in the result list
-func (dlr DNSResolverResultList) AggregatedResolveMessage() string {
-	reason := v1alpha1.NetworkPolicyResolveSuccess
+// AggregatedResolvedMessage returns the message with the highest priority in the result list
+func (dlr DNSResolverResultList) AggregatedResolvedMessage() string {
+	reason := v1alpha1.NetworkPolicyResolvedSuccess
 	message := ""
 	for _, dr := range dlr {
 		if message == "" || dr.Status.Priority() > reason.Priority() {
@@ -181,7 +181,7 @@ func (r *DNSResolver) lookupIP(
 ) ([]*v1alpha1.CIDR, error) {
 	if !host.Valid() {
 		return nil, &lookupError{
-			Reason:  v1alpha1.NetworkPolicyResolveInvalidDomain,
+			Reason:  v1alpha1.NetworkPolicyResolvedInvalidDomain,
 			Message: fmt.Sprintf("Received invalid FQDN '%s'", host),
 		}
 	}

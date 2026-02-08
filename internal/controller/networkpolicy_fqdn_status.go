@@ -32,10 +32,10 @@ func updateFQDNStatuses(
 					object, corev1.EventTypeWarning, "FQDNRemoved",
 					fmt.Sprintf(
 						"IP Addresses of FQDN %s removed after being stale for %s. "+
-							"Resolve status at removal time was %s (for %s). "+
-							"Last successful resolve time was %s ago.",
+							"Resolved status at removal time was %s (for %s). "+
+							"Last successful resolved time was %s ago.",
 						status.FQDN, (time.Duration(retryTimeoutSeconds)*time.Second).String(),
-						status.ResolveReason, timeNow.Sub(status.LastTransitionTime.Time).String(),
+						status.ResolvedReason, timeNow.Sub(status.LastTransitionTime.Time).String(),
 						timeNow.Sub(status.LastSuccessfulTime.Time).String(),
 					),
 				)
