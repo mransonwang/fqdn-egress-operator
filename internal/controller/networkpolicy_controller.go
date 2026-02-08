@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -79,6 +78,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	/*
 	patch := client.MergeFrom(np.DeepCopy())
 
 	if np.Spec.TargetNetwork != "" {
@@ -98,6 +98,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 	}
+	*/	
 
 	// Resolve the FQDNs to IP addresses
 	resolveTimeout := time.Duration(np.Spec.ResolveTimeoutSeconds) * time.Second
@@ -134,7 +135,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// The network policy does not define any Egress rules, delete network policy if it exists
 	if networkPolicy == nil {
-		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyFailed, "No Egress rules specified")
+		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyFailed, "No Egress rules specified.")
 		if err := r.Client.Status().Update(ctx, np); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -160,7 +161,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if utils.IsEmpty(networkPolicy) {
 		np.SetReadyConditionTrue(
 			v1alpha1.NetworkPolicyEmptyRules,
-			"Resolved to an empty NetworkPolicy. Egress deny-all in effect.",
+			"No domains were resolved to valid IP addresses. Egress deny-all is in effect.",
 		)
 		if err := r.Client.Status().Update(ctx, np); err != nil {
 			return ctrl.Result{}, err

@@ -259,13 +259,13 @@ type FQDNStatus struct {
 	// FQDN is the FQDN this status refers to
 	FQDN FQDN `json:"fqdn"`
 	// LastSuccessfulTime is the last time the FQDN was resolved successfully. I.e. the last time the ResolvedReason was NetworkPolicyResolvedSuccess
-	LastSuccessfulTime metav1.Time `json:"LastSuccessfulTime,omitempty"`
+	LastSuccessfulTime metav1.Time `json:"lastSuccessfulTime,omitempty"`
 	// LastTransitionTime is the last time the reason changed
 	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
 	// ResolvedReason describes the last resolved status
 	ResolvedReason NetworkPolicyResolvedConditionReason `json:"resolvedReason,omitempty"`
 	// ResolvedMessage is a message describing the reason for the status
-	ResolvedMessage string `json:"resolveMessage,omitempty"`
+	ResolvedMessage string `json:"resolvedMessage,omitempty"`
 	// Addresses is the list of resolved addresses for the given FQDN. The list is cleared if LastSuccessfulTime exceeds the time limit specified by NetworkPolicySpec.RetryTimeoutSeconds
 	Addresses []string `json:"addresses,omitempty"`
 }

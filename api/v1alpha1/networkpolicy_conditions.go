@@ -5,7 +5,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// SetResolveCondition updates the Resolve condition based on the provided reason and message.
+// SetResolvedCondition updates the Resolved condition based on the provided reason and message.
 // If the reason indicates success, the status is set to True with a standard success message.
 func (np *NetworkPolicy) SetResolveCondition(reason NetworkPolicyResolvedConditionReason, message string) {
 	condition := metav1.ConditionFalse

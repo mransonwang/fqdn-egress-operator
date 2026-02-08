@@ -13,6 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+var labelRegexp = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+
 // CIDR represents a network range in CIDR (Classless Inter-Domain Routing) notation.
 // It consists of an IP address and a Prefix (prefix length) that defines the size of the network.
 type CIDR struct {
@@ -53,7 +55,7 @@ func (c *CIDR) IsPrivate() bool {
 type CIDRList []*CIDR
 
 func (l CIDRList) String() []string {
-	var result []string
+	result := make([]string, 0, len(l))
 	for _, cidr := range l {
 		result = append(result, cidr.String())
 	}
@@ -62,7 +64,6 @@ func (l CIDRList) String() []string {
 
 // Valid returns true if the FQDN is valid
 func (f *FQDN) Valid() bool {
-	labelRegexp := regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
 	labels := strings.Split(string(*f), ".")
 	if len(labels) < 2 {
 		return false
@@ -104,15 +105,15 @@ func sortPeersByCIDR(peers []mnetv1beta1.MultiNetworkPolicyPeer) {
 }
 
 func getPeers(fqdns []FQDN, ips map[FQDN]*FQDNStatus, globalBlock bool, ruleBlock *bool) []mnetv1beta1.MultiNetworkPolicyPeer {
-	var peers []mnetv1beta1.MultiNetworkPolicyPeer
+	peers := make([]mnetv1beta1.MultiNetworkPolicyPeer, 0, len(fqdns))
 
 	for _, fqdn := range fqdns {
 		if status, ok := ips[fqdn]; ok {
 			for _, addr := range status.Addresses {
 				if isAllowed(addr, globalBlock, ruleBlock) {
-					peers = append(peers, mnetv1beta1.MultiNetworkPolicyPeer{IPBlock: &mnetv1beta1.IPBlock{
-						CIDR: addr,
-					}})
+					peers = append(peers, mnetv1beta1.MultiNetworkPolicyPeer{
+						IPBlock: &mnetv1beta1.IPBlock{CIDR: addr},
+					})
 				}
 			}
 		}
@@ -121,7 +122,7 @@ func getPeers(fqdns []FQDN, ips map[FQDN]*FQDNStatus, globalBlock bool, ruleBloc
 	return peers
 }
 
-// toNetworkPolicyEgressRule converts the EgressRule to a netv1.NetworkPolicyEgressRule.
+// toNetworkPolicyEgressRule converts the EgressRule to a mnetv1beta1.MultiNetworkPolicyEgressRule.
 // Returns nil if no peers were found.
 func (r *EgressRule) toMultiNetworkPolicyEgressRule(ips map[FQDN]*FQDNStatus, blockPrivate bool) *mnetv1beta1.MultiNetworkPolicyEgressRule {
 	peers := getPeers(r.ToFQDNs, ips, blockPrivate, r.BlockPrivateIPs)
@@ -129,40 +130,32 @@ func (r *EgressRule) toMultiNetworkPolicyEgressRule(ips map[FQDN]*FQDNStatus, bl
 		return nil
 	}
 
-	/*
-		external := []mnetv1beta1.MultiNetworkPolicyPort{}
-		for _, local := range r.Ports {
-			temp := intstr.Parse(local.Port)
-			p := mnetv1beta1.MultiNetworkPolicyPort{
-				Port:     &temp,
-				Protocol: local.Protocol,
-				EndPort:  nil,
-			}
-			external = append(external, p)
-		}*/
-
-	external := []mnetv1beta1.MultiNetworkPolicyPort{}
-	for _, local := range r.Ports {
-		temp := intstr.FromInt(int(local.Port))
-		p := mnetv1beta1.MultiNetworkPolicyPort{
-			Port:     &temp,
-			Protocol: &local.Protocol,
-			EndPort:  nil,
+	ports := make([]mnetv1beta1.MultiNetworkPolicyPort, len(r.Ports))
+	for i := range r.Ports {
+		val := intstr.FromInt(int(r.Ports[i].Port))
+		proto := r.Ports[i].Protocol
+		ports[i] = mnetv1beta1.MultiNetworkPolicyPort{
+			Port:     &val,
+			Protocol: &proto,
 		}
-		external = append(external, p)
 	}
 
 	return &mnetv1beta1.MultiNetworkPolicyEgressRule{
-		Ports: external,
+		Ports: ports,
 		To:    peers,
 	}
 }
 
 // FQDNs Returns all unique FQDNs defined in the network policy
 func (np *NetworkPolicy) FQDNs() []FQDN {
-	set := make(map[FQDN]struct{})
-	for _, rule := range np.Spec.Egresses {
-		for _, fqdn := range rule.ToFQDNs {
+	totalPossible := 0
+	for i := range np.Spec.Egresses {
+		totalPossible += len(np.Spec.Egresses[i].ToFQDNs)
+	}
+
+	set := make(map[FQDN]struct{}, totalPossible)
+	for i := range np.Spec.Egresses {
+		for _, fqdn := range np.Spec.Egresses[i].ToFQDNs {
 			set[fqdn] = struct{}{}
 		}
 	}
@@ -179,58 +172,56 @@ func (np *NetworkPolicy) FQDNs() []FQDN {
 	return fqdns
 }
 
-// ToNetworkPolicy converts the NetworkPolicy to a netv1.NetworkPolicy.
+// ToMultiNetworkPolicy converts the NetworkPolicy to a mnetv1beta1.MultiNetworkPolicy.
 // If no Egress rules are specified, nil is returned.
 func (np *NetworkPolicy) ToMultiNetworkPolicy(fqdnStatuses []FQDNStatus) *mnetv1beta1.MultiNetworkPolicy {
-	if len(np.Spec.Egresses) == 0 {
+	numRules := len(np.Spec.Egresses)
+	if numRules == 0 {
 		return nil
 	}
 
 	lookup := FQDNStatusList(fqdnStatuses).LookupTable()
-	var egress []mnetv1beta1.MultiNetworkPolicyEgressRule
-	for _, fqdnRule := range np.Spec.Egresses {
-		if rule := fqdnRule.toMultiNetworkPolicyEgressRule(lookup, np.Spec.BlockPrivateIPs); rule != nil {
+
+	egress := make([]mnetv1beta1.MultiNetworkPolicyEgressRule, 0, numRules)
+
+	for i := range np.Spec.Egresses {
+		if rule := np.Spec.Egresses[i].toMultiNetworkPolicyEgressRule(lookup, np.Spec.BlockPrivateIPs); rule != nil {
 			egress = append(egress, *rule)
 		}
 	}
 
-	// 由于OpenShift控制台界面显示并传入的只有EndPort的值，因此这里将EndPort的值赋予给Port，希望在下面生成MultiNetworkPolicy的时候能将Port的值带入
-	// EndPort的本义是结束的端口号，是相对于Port而言的，比如Port为8080，EndPort为8090，则端口8080~8090均满足条件
-	// 当EndPort和Port为相同值的时候，范围就收窄为一个端口
-	// 由于OpenShift控制台界面的Bug，只显示EndPort的输入并回传，不显示Port的输入也没办法回传，因此在创建MultiNetworkPolicy的前一刻，强制将EndPort的值赋予Port，迂回的解决问题
-	/*for i, rule := range egress {
-		for j := range rule.Ports {
-			if egress[i].Ports[j].EndPort != nil {
-				temp := intstr.FromInt(int(*egress[i].Ports[j].EndPort))
-				egress[i].Ports[j].Port = &temp
-			}
-		}
-	}*/
-
-	selectorMap := make(map[string]string, len(np.Spec.MatchLabels))
-
-	for _, item := range np.Spec.MatchLabels {
-		selectorMap[string(item.Label)] = item.Value
+	matchLabels := make(map[string]string, len(np.Spec.MatchLabels))
+	for i := range np.Spec.MatchLabels {
+		item := &np.Spec.MatchLabels[i]
+		matchLabels[string(item.Label)] = item.Value
 	}
 
-	external := make([]metav1.LabelSelectorRequirement, len(np.Spec.MatchExpressions))
-	for i, item := range np.Spec.MatchExpressions {
-		external[i].Key = item.Key
-		external[i].Operator = item.Operator
-		//external[i].Values = item.Values
+	matchExpressions := make([]metav1.LabelSelectorRequirement, len(np.Spec.MatchExpressions))
+	for i := range np.Spec.MatchExpressions {
+		src := &np.Spec.MatchExpressions[i]
+		dst := &matchExpressions[i]
 
-		external[i].Values = make([]string, len(item.Values))
-		for j, v := range item.Values {
-			external[i].Values[j] = string(v)
+		dst.Key = src.Key
+		dst.Operator = src.Operator
+		dst.Values = make([]string, len(src.Values))
+		for j := range src.Values {
+			dst.Values[j] = string(src.Values[j])
 		}
 	}
 
 	return &mnetv1beta1.MultiNetworkPolicy{
-		ObjectMeta: np.ObjectMeta,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      np.Name,
+			Namespace: np.Namespace,
+			Labels:    np.Labels,
+			Annotations: map[string]string{
+				"k8s.v1.cni.cncf.io/policy-for": fmt.Sprintf("%s/%s", np.Namespace, np.Spec.TargetNetwork),
+			},
+		},
 		Spec: mnetv1beta1.MultiNetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
-				MatchLabels:      selectorMap,
-				MatchExpressions: external,
+				MatchLabels:      matchLabels,
+				MatchExpressions: matchExpressions,
 			},
 			Egress:      egress,
 			PolicyTypes: []mnetv1beta1.MultiPolicyType{mnetv1beta1.PolicyTypeEgress},
@@ -287,9 +278,9 @@ func NewFQDNStatus(fqdn FQDN, cidrs []*CIDR, reason NetworkPolicyResolvedConditi
 type FQDNStatusList []FQDNStatus
 
 func (s FQDNStatusList) LookupTable() map[FQDN]*FQDNStatus {
-	lookupTable := make(map[FQDN]*FQDNStatus)
-	for _, status := range s {
-		lookupTable[status.FQDN] = &status
+	lookupTable := make(map[FQDN]*FQDNStatus, len(s))
+	for i := range s {
+		lookupTable[s[i].FQDN] = &s[i]
 	}
 	return lookupTable
 }

@@ -80,7 +80,7 @@ func resolvedReason(err error) v1alpha1.NetworkPolicyResolvedConditionReason {
 // resolvedMessage returns an error message for the given error
 func resolvedMessage(err error) string {
 	if err == nil {
-		return "Resolve succeeded"
+		return "Resolved successfully."
 	}
 	var lookupErr *lookupError
 	if errors.As(err, &lookupErr) {
@@ -91,13 +91,13 @@ func resolvedMessage(err error) string {
 		return err.Error()
 	}
 	if dnsErr.IsTimeout {
-		return "Timeout waiting for DNS response"
+		return "Timeout waiting for DNS response."
 	}
 	if dnsErr.IsNotFound {
-		return "Domain not found"
+		return "Domain not found."
 	}
 	if dnsErr.IsTemporary {
-		return "Temporary failure in name resolution"
+		return "Temporary failure in name resolution."
 	}
 	return err.Error()
 }

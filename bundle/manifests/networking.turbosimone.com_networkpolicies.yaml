@@ -34,7 +34,7 @@ spec:
       jsonPath: .status.appliedAddressCount
       name: Applied IPs
       type: integer
-    - description: Time of last FQDN resolve
+    - description: Time of last FQDN resolved
       jsonPath: .status.latestLookupTime
       name: Last Lookup
       type: date
@@ -342,12 +342,6 @@ spec:
                 items:
                   description: FQDNStatus defines the status of a given FQDN
                   properties:
-                    LastSuccessfulTime:
-                      description: LastSuccessfulTime is the last time the FQDN was
-                        resolved successfully. I.e. the last time the ResolveReason
-                        was NetworkPolicyResolveSuccess
-                      format: date-time
-                      type: string
                     addresses:
                       description: Addresses is the list of resolved addresses for
                         the given FQDN. The list is cleared if LastSuccessfulTime
@@ -359,17 +353,23 @@ spec:
                       description: FQDN is the FQDN this status refers to
                       pattern: ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$
                       type: string
+                    lastSuccessfulTime:
+                      description: LastSuccessfulTime is the last time the FQDN was
+                        resolved successfully. I.e. the last time the ResolvedReason
+                        was NetworkPolicyResolvedSuccess
+                      format: date-time
+                      type: string
                     lastTransitionTime:
                       description: LastTransitionTime is the last time the reason
                         changed
                       format: date-time
                       type: string
-                    resolveMessage:
-                      description: ResolveMessage is a message describing the reason
+                    resolvedMessage:
+                      description: ResolvedMessage is a message describing the reason
                         for the status
                       type: string
                     resolvedReason:
-                      description: ResolveReason describes the last resolve status
+                      description: ResolvedReason describes the last resolved status
                       type: string
                   required:
                   - fqdn
