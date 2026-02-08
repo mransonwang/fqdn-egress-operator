@@ -69,7 +69,7 @@ func resolvedReason(err error) v1alpha1.NetworkPolicyResolvedConditionReason {
 		return v1alpha1.NetworkPolicyResolvedTimeout
 	}
 	if dnsErr.IsNotFound {
-		return v1alpha1.NetworkPolicyResolvedTimeout
+		return v1alpha1.NetworkPolicyResolvedDomainNotFound
 	}
 	if dnsErr.IsTemporary {
 		return v1alpha1.NetworkPolicyResolvedTemporaryError
@@ -108,16 +108,16 @@ type DNSResolverResultList []*DNSResolverResult
 // CIDRs returns all the CIDRs in the result list
 func (dlr DNSResolverResultList) CIDRs() []*v1alpha1.CIDR {
 	total := 0
-	for _, dr := range dlr {
-		total += len(dr.CIDRs)
+	for i := range dlr {
+		total += len(dlr[i].CIDRs)
 	}
 	if total == 0 {
 		return []*v1alpha1.CIDR{}
 	}
 
 	cidrs := make([]*v1alpha1.CIDR, 0, total)
-	for _, dr := range dlr {
-		cidrs = append(cidrs, dr.CIDRs...)
+	for i := range dlr {
+		cidrs = append(cidrs, dlr[i].CIDRs...)
 	}
 	return cidrs
 }
@@ -125,9 +125,9 @@ func (dlr DNSResolverResultList) CIDRs() []*v1alpha1.CIDR {
 // AggregatedResolvedStatus returns the reason with the highest priority in the result list
 func (dlr DNSResolverResultList) AggregatedResolvedStatus() v1alpha1.NetworkPolicyResolvedConditionReason {
 	reason := v1alpha1.NetworkPolicyResolvedSuccess
-	for _, dr := range dlr {
-		if dr.Status.Priority() > reason.Priority() {
-			reason = dr.Status
+	for i := range dlr {
+		if dlr[i].Status.Priority() > reason.Priority() {
+			reason = dlr[i].Status
 		}
 	}
 	return reason
@@ -137,10 +137,10 @@ func (dlr DNSResolverResultList) AggregatedResolvedStatus() v1alpha1.NetworkPoli
 func (dlr DNSResolverResultList) AggregatedResolvedMessage() string {
 	reason := v1alpha1.NetworkPolicyResolvedSuccess
 	message := ""
-	for _, dr := range dlr {
-		if message == "" || dr.Status.Priority() > reason.Priority() {
-			reason = dr.Status
-			message = dr.Message
+	for i := range dlr {
+		if message == "" || dlr[i].Status.Priority() > reason.Priority() {
+			reason = dlr[i].Status
+			message = dlr[i].Message
 		}
 	}
 	return message
@@ -149,8 +149,8 @@ func (dlr DNSResolverResultList) AggregatedResolvedMessage() string {
 // LookupTable returns a FQDN lookup table for the result list
 func (dlr DNSResolverResultList) LookupTable() map[v1alpha1.FQDN]*DNSResolverResult {
 	lookup := make(map[v1alpha1.FQDN]*DNSResolverResult, len(dlr))
-	for _, dr := range dlr {
-		lookup[dr.Domain] = dr
+	for i := range dlr {
+		lookup[dlr[i].Domain] = dlr[i]
 	}
 	return lookup
 }
@@ -218,7 +218,7 @@ func (r *DNSResolver) Resolve(
 	sem := make(chan struct{}, maxConcurrent)
 
 	var wg sync.WaitGroup
-	for _, fqdn := range fqdns {
+	for i := range fqdns {
 		wg.Add(1)
 		go func(rFQDN v1alpha1.FQDN) {
 			defer wg.Done()
@@ -234,11 +234,9 @@ func (r *DNSResolver) Resolve(
 
 			childCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
-
 			cidrs, err := r.lookupIP(childCtx, networkType, rFQDN)
-
 			results <- NewDNSResolverResult(rFQDN, cidrs, err)
-		}(fqdn)
+		}(fqdns[i])
 	}
 
 	go func() {
