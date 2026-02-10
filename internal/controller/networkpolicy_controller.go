@@ -161,7 +161,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if utils.IsEmpty(networkPolicy) {
 		np.SetReadyConditionTrue(
 			v1alpha1.NetworkPolicyEmptyRules,
-			"No domains were resolved to valid IP addresses. Egress deny-all is in effect.",
+			"No domains were resolved to valid IP addresses, egress deny-all is in effect.",
 		)
 		if err := r.Client.Status().Update(ctx, np); err != nil {
 			return ctrl.Result{}, err

@@ -244,16 +244,19 @@ func (f *FQDNStatus) Update(
 		retryLimitReached := time.Now().After(
 			f.LastSuccessfulTime.Add(time.Duration(retryTimeoutSeconds) * time.Second),
 		)
-
 		if retryLimitReached {
-			f.Addresses = []string{}
-			cleared = true
+			if len(f.Addresses) > 0 {
+				f.Addresses = []string{}
+				cleared = true
+			}
 		}
 	}
 	// On non-transient errors we clear the addresses immediately
 	if reason != NetworkPolicyResolvedSuccess && !reason.Transient() {
-		f.Addresses = []string{}
-		cleared = true
+		if len(f.Addresses) > 0 {
+			f.Addresses = []string{}
+			cleared = true
+		}
 	}
 	if f.ResolvedReason != reason {
 		f.LastTransitionTime = metav1.Now()

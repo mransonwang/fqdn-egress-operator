@@ -94,7 +94,7 @@ func resolvedMessage(err error) string {
 		return "Timeout waiting for DNS response."
 	}
 	if dnsErr.IsNotFound {
-		return "Domain not found."
+		return "Domain not found or no address records exist (no such host)."
 	}
 	if dnsErr.IsTemporary {
 		return "Temporary failure in name resolution."

@@ -18,27 +18,34 @@ func updateFQDNStatuses(
 	previous []v1alpha1.FQDNStatus, results network.DNSResolverResultList,
 	retryTimeoutSeconds int,
 ) []v1alpha1.FQDNStatus {
-	var newFQDNStatuses []v1alpha1.FQDNStatus
+	newFQDNStatuses := make([]v1alpha1.FQDNStatus, 0, len(results))
 	previousLookup := v1alpha1.FQDNStatusList(previous).LookupTable()
 
-	for _, result := range results {
+	for i := range results {
+		result := results[i]
 		if status, ok := previousLookup[result.Domain]; ok {
 			cleared := status.Update(result.CIDRs, result.Status, result.Message, retryTimeoutSeconds)
 			newFQDNStatuses = append(newFQDNStatuses, *status)
 
 			if cleared {
-				timeNow := time.Now()
-				recorder.Event(
-					object, corev1.EventTypeWarning, "FQDNRemoved",
-					fmt.Sprintf(
-						"IP Addresses of FQDN %s removed after being stale for %s. "+
-							"Resolved status at removal time was %s (for %s). "+
-							"Last successful resolved time was %s ago.",
-						status.FQDN, (time.Duration(retryTimeoutSeconds)*time.Second).String(),
-						status.ResolvedReason, timeNow.Sub(status.LastTransitionTime.Time).String(),
-						timeNow.Sub(status.LastSuccessfulTime.Time).String(),
-					),
-				)
+                var eventMsg string
+                if result.Status.Transient() {
+                    eventMsg = fmt.Sprintf(
+                        "IP Addresses of FQDN %s removed after being stale for %s (Status: %s). Last successful resolved time was %s ago.",
+                        status.FQDN,
+                        (time.Duration(retryTimeoutSeconds) * time.Second).String(),
+						status.ResolvedReason,
+                        time.Since(status.LastSuccessfulTime.Time).Round(time.Second).String(),
+                    )
+                } else {
+                    eventMsg = fmt.Sprintf(
+                        "IP Addresses of FQDN %s removed immediately because the domain is invalid or does not exist (Status: %s).",
+                        status.FQDN,
+                        status.ResolvedReason,
+                    )
+                }
+
+                recorder.Event(object, corev1.EventTypeWarning, "FQDNRemoved", eventMsg)
 			}
 		} else {
 			newFQDNStatuses = append(newFQDNStatuses, v1alpha1.NewFQDNStatus(
