@@ -145,10 +145,10 @@ type NetworkPolicySpec struct {
 	// +kubebuilder:validation:XValidation:rule="self.all(i, self.filter(j, i.key == j.key && i.operator == j.operator && j.values.exists(v, v in i.values)).size() == 1)",message="spec.matchExpressions in body should not contain overlapping values for the same key and operator"
 	MatchExpressions []LabelSelectorRequirement `json:"matchExpressions,omitempty"`
 
-	// Egresses defines the outbound network traffic rules for the selected pods.
+	// Egress defines the outbound network traffic rules for the selected pods.
 	// +kubebuilder:validation:MaxItems=30
 	// +kubebuilder:validation:XValidation:rule="self.all(i, self.filter(j, j.toFQDNs.exists(f, f in i.toFQDNs) && j.ports.exists(p, p in i.ports)).size() == 1)",message="spec.egress in body should not contain overlapping toFQDNs and ports across different rules"	
-	Egresses []EgressRule `json:"egress"`
+	Egress []EgressRule `json:"egress"`
 
 	// EnabledNetworkType defines which type of IP addresses to allow.
 	//
@@ -215,28 +215,25 @@ const (
 type NetworkPolicyResolvedConditionReason string
 
 const (
-	NetworkPolicyResolvedOtherError     NetworkPolicyResolvedConditionReason = "OTHER_ERROR"
-	NetworkPolicyResolvedInvalidDomain  NetworkPolicyResolvedConditionReason = "INVALID_DOMAIN"
-	NetworkPolicyResolvedDomainNotFound NetworkPolicyResolvedConditionReason = "NXDOMAIN"
+	NetworkPolicyResolvedError          NetworkPolicyResolvedConditionReason = "ERROR"
+	NetworkPolicyResolvedHostNotFound   NetworkPolicyResolvedConditionReason = "NXHOST"
+	NetworkPolicyResolvedInvalidFormat  NetworkPolicyResolvedConditionReason = "INVALID_FORMAT"
 	NetworkPolicyResolvedTimeout        NetworkPolicyResolvedConditionReason = "TIMEOUT"
 	NetworkPolicyResolvedTemporaryError NetworkPolicyResolvedConditionReason = "TEMPORARY"
-	NetworkPolicyResolvedUnknown        NetworkPolicyResolvedConditionReason = "UNKNOWN"
 	NetworkPolicyResolvedSuccess        NetworkPolicyResolvedConditionReason = "SUCCESS"
 )
 
 func (r NetworkPolicyResolvedConditionReason) Priority() int {
 	switch r {
-	case NetworkPolicyResolvedOtherError:
-		return 6
-	case NetworkPolicyResolvedInvalidDomain:
+	case NetworkPolicyResolvedError:
 		return 5
-	case NetworkPolicyResolvedDomainNotFound:
+	case NetworkPolicyResolvedHostNotFound:
 		return 4
-	case NetworkPolicyResolvedTimeout:
+	case NetworkPolicyResolvedInvalidFormat:
 		return 3
-	case NetworkPolicyResolvedTemporaryError:
+	case NetworkPolicyResolvedTimeout:
 		return 2
-	case NetworkPolicyResolvedUnknown:
+	case NetworkPolicyResolvedTemporaryError:
 		return 1
 	default:
 		return 0
@@ -245,9 +242,9 @@ func (r NetworkPolicyResolvedConditionReason) Priority() int {
 
 func (r NetworkPolicyResolvedConditionReason) Transient() bool {
 	switch r {
-	case NetworkPolicyResolvedInvalidDomain:
+	case NetworkPolicyResolvedInvalidFormat:
 		return false
-	case NetworkPolicyResolvedDomainNotFound:
+	case NetworkPolicyResolvedHostNotFound:
 		return false
 	default:
 		return true
@@ -285,7 +282,7 @@ type NetworkPolicyStatus struct {
 	AppliedAddressCount int32 `json:"appliedAddressCount,omitempty"`
 
 	// TotalAddressCount is the number of total IPs resolved from the FQDNs before filtering
-	TotalAddressCount int32 `json:"totalAddressesCount,omitempty"`
+	TotalAddressCount int32 `json:"totalAddressCount,omitempty"`
 
 	Conditions         []metav1.Condition `json:"conditions"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
@@ -302,7 +299,7 @@ type NetworkPolicyStatus struct {
 // +kubebuilder:resource:path=networkpolicies,singular=networkpolicy,scope=Namespaced,shortName={fenp,fnp}
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`,description="Ready condition status"
 // +kubebuilder:printcolumn:name="Resolved",type=string,JSONPath=`.status.conditions[?(@.type=="Resolved")].status`,description="Resolved condition status"
-// +kubebuilder:printcolumn:name="Resolved IPs",type=integer,JSONPath=`.status.totalAddressesCount`,description="Number of resolved IPs before filtering"
+// +kubebuilder:printcolumn:name="Resolved IPs",type=integer,JSONPath=`.status.totalAddressCount`,description="Number of resolved IPs before filtering"
 // +kubebuilder:printcolumn:name="Applied IPs",type=integer,JSONPath=`.status.appliedAddressCount`,description="Number of applied IPs"
 // +kubebuilder:printcolumn:name="Last Lookup",type=date,JSONPath=`.status.latestLookupTime`,description="Time of last FQDN resolved"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

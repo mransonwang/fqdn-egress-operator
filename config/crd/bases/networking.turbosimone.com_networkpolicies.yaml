@@ -27,7 +27,7 @@ spec:
       name: Resolved
       type: string
     - description: Number of resolved IPs before filtering
-      jsonPath: .status.totalAddressesCount
+      jsonPath: .status.totalAddressCount
       name: Resolved IPs
       type: integer
     - description: Number of applied IPs
@@ -77,7 +77,7 @@ spec:
                    - Defaults to false if not specified
                 type: boolean
               egress:
-                description: Egresses defines the outbound network traffic rules for
+                description: Egress defines the outbound network traffic rules for
                   the selected pods.
                 items:
                   description: |-
@@ -382,7 +382,7 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
-              totalAddressesCount:
+              totalAddressCount:
                 description: TotalAddressCount is the number of total IPs resolved
                   from the FQDNs before filtering
                 format: int32

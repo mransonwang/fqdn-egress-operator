@@ -268,8 +268,8 @@ func (in *NetworkPolicySpec) DeepCopyInto(out *NetworkPolicySpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	if in.Egresses != nil {
-		in, out := &in.Egresses, &out.Egresses
+	if in.Egress != nil {
+		in, out := &in.Egress, &out.Egress
 		*out = make([]EgressRule, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])

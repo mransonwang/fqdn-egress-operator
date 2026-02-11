@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// reconcileNetworkPolicyCreation Removes the underlying network policy
+// reconcileNetworkPolicyDeletion Removes the underlying network policy
 func (r *NetworkPolicyReconciler) reconcileNetworkPolicyDeletion(ctx context.Context, np *v1alpha1.NetworkPolicy) error {
 	networkPolicy := &mnetv1beta1.MultiNetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{

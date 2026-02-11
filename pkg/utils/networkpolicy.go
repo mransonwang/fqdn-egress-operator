@@ -20,8 +20,10 @@ func RemoveDuplicateCidrsInNetworkPolicy(networkPolicy *mnetv1beta1.MultiNetwork
 
 	cidrToPortsMap := make(map[string]map[string]mnetv1beta1.MultiNetworkPolicyPort, totalPeers)
 
-	for _, rule := range networkPolicy.Spec.Egress {
-		for _, peer := range rule.To {
+	for i := range networkPolicy.Spec.Egress {
+		rule := &networkPolicy.Spec.Egress[i]
+		for j := range rule.To {
+			peer := &rule.To[j]
 			if peer.IPBlock == nil || peer.IPBlock.CIDR == "" {
 				continue
 			}
@@ -30,7 +32,8 @@ func RemoveDuplicateCidrsInNetworkPolicy(networkPolicy *mnetv1beta1.MultiNetwork
 				cidrToPortsMap[cidr] = make(map[string]mnetv1beta1.MultiNetworkPolicyPort, 8)
 			}
 
-			for _, p := range rule.Ports {
+			for k := range rule.Ports {
+				p := rule.Ports[k]
 				pKey := getSinglePortKey(p)
 				cidrToPortsMap[cidr][pKey] = p
 			}
@@ -101,8 +104,8 @@ func getPortsFingerprint(ports []mnetv1beta1.MultiNetworkPolicyPort) string {
 	}
 
 	tmp := make([]string, len(ports))
-	for i, p := range ports {
-		tmp[i] = getSinglePortKey(p)
+	for i := range ports {
+		tmp[i] = getSinglePortKey(ports[i])
 	}
 	
 	sort.Strings(tmp)

@@ -149,13 +149,13 @@ func (r *EgressRule) toMultiNetworkPolicyEgressRule(ips map[FQDN]*FQDNStatus, bl
 // FQDNs Returns all unique FQDNs defined in the network policy
 func (np *NetworkPolicy) FQDNs() []FQDN {
 	totalPossible := 0
-	for i := range np.Spec.Egresses {
-		totalPossible += len(np.Spec.Egresses[i].ToFQDNs)
+	for i := range np.Spec.Egress {
+		totalPossible += len(np.Spec.Egress[i].ToFQDNs)
 	}
 
 	set := make(map[FQDN]struct{}, totalPossible)
-	for i := range np.Spec.Egresses {
-		for _, fqdn := range np.Spec.Egresses[i].ToFQDNs {
+	for i := range np.Spec.Egress {
+		for _, fqdn := range np.Spec.Egress[i].ToFQDNs {
 			set[fqdn] = struct{}{}
 		}
 	}
@@ -175,7 +175,7 @@ func (np *NetworkPolicy) FQDNs() []FQDN {
 // ToMultiNetworkPolicy converts the NetworkPolicy to a mnetv1beta1.MultiNetworkPolicy.
 // If no Egress rules are specified, nil is returned.
 func (np *NetworkPolicy) ToMultiNetworkPolicy(fqdnStatuses []FQDNStatus) *mnetv1beta1.MultiNetworkPolicy {
-	numRules := len(np.Spec.Egresses)
+	numRules := len(np.Spec.Egress)
 	if numRules == 0 {
 		return nil
 	}
@@ -184,8 +184,8 @@ func (np *NetworkPolicy) ToMultiNetworkPolicy(fqdnStatuses []FQDNStatus) *mnetv1
 
 	egress := make([]mnetv1beta1.MultiNetworkPolicyEgressRule, 0, numRules)
 
-	for i := range np.Spec.Egresses {
-		if rule := np.Spec.Egresses[i].toMultiNetworkPolicyEgressRule(lookup, np.Spec.BlockPrivateIPs); rule != nil {
+	for i := range np.Spec.Egress {
+		if rule := np.Spec.Egress[i].toMultiNetworkPolicyEgressRule(lookup, np.Spec.BlockPrivateIPs); rule != nil {
 			egress = append(egress, *rule)
 		}
 	}

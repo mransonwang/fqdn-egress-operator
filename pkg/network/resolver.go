@@ -21,7 +21,7 @@ func (e lookupError) Error() string {
 	return e.Message
 }
 
-// DNSResolverResult Is the resulting outcome of a Resolver's DNS lookup
+// DNSResolverResult is the resulting outcome of a Resolver's DNS lookup
 type DNSResolverResult struct {
 	// Domain that the lookup was for
 	Domain v1alpha1.FQDN
@@ -63,18 +63,18 @@ func resolvedReason(err error) v1alpha1.NetworkPolicyResolvedConditionReason {
 	}
 	var dnsErr *net.DNSError
 	if !errors.As(err, &dnsErr) {
-		return v1alpha1.NetworkPolicyResolvedOtherError
+		return v1alpha1.NetworkPolicyResolvedError
 	}
 	if dnsErr.IsTimeout {
 		return v1alpha1.NetworkPolicyResolvedTimeout
 	}
 	if dnsErr.IsNotFound {
-		return v1alpha1.NetworkPolicyResolvedDomainNotFound
+		return v1alpha1.NetworkPolicyResolvedHostNotFound
 	}
 	if dnsErr.IsTemporary {
 		return v1alpha1.NetworkPolicyResolvedTemporaryError
 	}
-	return v1alpha1.NetworkPolicyResolvedOtherError
+	return v1alpha1.NetworkPolicyResolvedError
 }
 
 // resolvedMessage returns an error message for the given error
@@ -181,8 +181,8 @@ func (r *DNSResolver) lookupIP(
 ) ([]*v1alpha1.CIDR, error) {
 	if !host.Valid() {
 		return nil, &lookupError{
-			Reason:  v1alpha1.NetworkPolicyResolvedInvalidDomain,
-			Message: fmt.Sprintf("Received invalid FQDN '%s'", host),
+			Reason:  v1alpha1.NetworkPolicyResolvedInvalidFormat,
+			Message: fmt.Sprintf("Received invalid FQDN '%s'.", host),
 		}
 	}
 	ips, err := r.resolver.LookupIP(ctx, networkType.ResolverString(), string(host))
@@ -218,7 +218,7 @@ func (r *DNSResolver) Resolve(
 	sem := make(chan struct{}, maxConcurrent)
 
 	var wg sync.WaitGroup
-	for i := range fqdns {
+	for _, fqdn := range fqdns {
 		wg.Add(1)
 		go func(rFQDN v1alpha1.FQDN) {
 			defer wg.Done()
@@ -236,7 +236,7 @@ func (r *DNSResolver) Resolve(
 			defer cancel()
 			cidrs, err := r.lookupIP(childCtx, networkType, rFQDN)
 			results <- NewDNSResolverResult(rFQDN, cidrs, err)
-		}(fqdns[i])
+		}(fqdn)
 	}
 
 	go func() {

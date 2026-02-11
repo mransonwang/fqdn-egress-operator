@@ -21,8 +21,7 @@ func updateFQDNStatuses(
 	newFQDNStatuses := make([]v1alpha1.FQDNStatus, 0, len(results))
 	previousLookup := v1alpha1.FQDNStatusList(previous).LookupTable()
 
-	for i := range results {
-		result := results[i]
+	for _, result := range results {
 		if status, ok := previousLookup[result.Domain]; ok {
 			cleared := status.Update(result.CIDRs, result.Status, result.Message, retryTimeoutSeconds)
 			newFQDNStatuses = append(newFQDNStatuses, *status)
@@ -39,7 +38,7 @@ func updateFQDNStatuses(
                     )
                 } else {
                     eventMsg = fmt.Sprintf(
-                        "IP Addresses of FQDN %s removed immediately because the domain is invalid or does not exist (Status: %s).",
+                        "IP Addresses of FQDN %s removed immediately because domain not found or no address records exist (no such host) (Status: %s).",
                         status.FQDN,
                         status.ResolvedReason,
                     )
