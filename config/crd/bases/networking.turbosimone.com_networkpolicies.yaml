@@ -131,7 +131,7 @@ spec:
                           domain (e.g., ".com", ".org") of at least two characters.
                         pattern: ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$
                         type: string
-                      maxItems: 50
+                      maxItems: 200
                       type: array
                       x-kubernetes-list-type: set
                   required:
