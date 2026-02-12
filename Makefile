@@ -316,7 +316,10 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 	rm -f bundle/manifests/*_networkpolicy.yaml
     # 注入OpenShift最低版本号要求
 	@echo "  com.redhat.openshift.versions: \"v4.19\"" >> bundle/metadata/annotations.yaml
-	$(OPERATOR_SDK) bundle validate ./bundle
+	$(OPERATOR_SDK) bundle validate ./bundle \
+		--select-optional name=operatorhubv2 \
+		--select-optional name=capabilities \
+		--select-optional name=categories
 
 .PHONY: bundle-build
 bundle-build: ## Build the bundle image.
