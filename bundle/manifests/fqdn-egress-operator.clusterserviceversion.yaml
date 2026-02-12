@@ -62,15 +62,15 @@ metadata:
       ]
     capabilities: Seamless Upgrades
     categories: Networking, Security, Monitoring
-    containerImage: quay.io/turbosimone/fqdn-egress-operator:v1.0.2
-    createdAt: "2026-02-12T00:56:25Z"
+    containerImage: quay.io/turbosimone/fqdn-egress-operator:v1.0.3
+    createdAt: "2026-02-12T11:29:59Z"
     description: Creates and maintains NetworkPolicies that supports outbound flows
       based on FQDNs
     operators.operatorframework.io/builder: operator-sdk-v1.42.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/mransonwang/fqdn-egress-operator
     support: Community
-  name: fqdn-egress-operator.v1.0.2
+  name: fqdn-egress-operator.v1.0.3
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -276,7 +276,7 @@ spec:
                 - --health-probe-bind-address=:8081
                 command:
                 - /manager
-                image: quay.io/turbosimone/fqdn-egress-operator:v1.0.2
+                image: quay.io/turbosimone/fqdn-egress-operator:v1.0.3
                 imagePullPolicy: Always
                 livenessProbe:
                   httpGet:
@@ -368,5 +368,5 @@ spec:
   minKubeVersion: 1.32.0
   provider:
     name: Feng Wang
-  replaces: fqdn-egress-operator.v1.0.1
-  version: 1.0.2
+  replaces: fqdn-egress-operator.v1.0.2
+  version: 1.0.3
