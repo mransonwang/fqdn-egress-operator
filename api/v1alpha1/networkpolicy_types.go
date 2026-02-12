@@ -110,7 +110,7 @@ type FQDN string
 // Each FQDNs IP's will be looked up periodically to update the underlying NetworkPolicy.
 type EgressRule struct {
 	// ToFQDNs are the FQDNs to which traffic is allowed (outgoing).
-	// +kubebuilder:validation:MaxItems=200
+	// +kubebuilder:validation:MaxItems=100
 	// +listType=set
 	ToFQDNs []FQDN `json:"toFQDNs"`
 	// Ports describes the ports to allow traffic on.
