@@ -9,9 +9,11 @@ import (
 // If the reason indicates success, the status is set to True with a standard success message.
 func (np *NetworkPolicy) SetResolveCondition(reason NetworkPolicyResolvedConditionReason, message string) {
 	condition := metav1.ConditionFalse
+	// 只有NetworkPolicyResolvedSuccess才会置其为Ture，否则其他两种状态PartialSuccess和Failure都是False
+	// 使用resolver.go中设定的提示信息，而不要在这里硬编码
 	if reason == NetworkPolicyResolvedSuccess {
 		condition = metav1.ConditionTrue
-		message = "The network policy resolved successfully."
+		//message = "The network policy resolved successfully."
 	}
 	meta.SetStatusCondition(&np.Status.Conditions, metav1.Condition{
 		Type:               string(NetworkPolicyResolvedCondition),

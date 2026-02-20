@@ -56,14 +56,14 @@ metadata:
                 ]
               }
             ],
-            "targetNetwork": "cudn-localnet2"
+            "targetNetwork": "cudn-secondary-localnet2"
           }
         }
       ]
     capabilities: Seamless Upgrades
     categories: Networking, Security, Monitoring
     containerImage: quay.io/turbosimone/fqdn-egress-operator:v1.0.3
-    createdAt: "2026-02-13T02:30:33Z"
+    createdAt: "2026-02-20T05:51:59Z"
     description: Creates and maintains NetworkPolicies that supports outbound flows
       based on FQDNs
     operators.operatorframework.io/builder: operator-sdk-v1.42.0
@@ -157,7 +157,7 @@ spec:
       name: allow-rhel9--egress-redhat
       namespace: demo-app
     spec:
-      targetNetwork: cudn-localnet2
+      targetNetwork: cudn-secondary-localnet2
       matchExpressions:
         - key: vm.kubevirt.io/name
           operator: In

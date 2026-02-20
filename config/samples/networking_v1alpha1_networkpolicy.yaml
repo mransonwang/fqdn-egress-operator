@@ -3,7 +3,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-rhel9-egress-redhat
 spec:
-  targetNetwork: cudn-localnet2
+  targetNetwork: cudn-secondary-localnet2
   matchExpressions:
     - key: vm.kubevirt.io/name
       operator: In

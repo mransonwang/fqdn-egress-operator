@@ -49,7 +49,7 @@ spec:
       name: allow-rhel9--egress-redhat
       namespace: demo-app
     spec:
-      targetNetwork: cudn-localnet2
+      targetNetwork: cudn-secondary-localnet2
       matchExpressions:
         - key: vm.kubevirt.io/name
           operator: In

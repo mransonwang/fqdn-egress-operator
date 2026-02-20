@@ -147,7 +147,7 @@ type NetworkPolicySpec struct {
 
 	// Egress defines the outbound network traffic rules for the selected pods.
 	// +kubebuilder:validation:MaxItems=30
-	// +kubebuilder:validation:XValidation:rule="self.all(i, self.filter(j, j.toFQDNs.exists(f, f in i.toFQDNs) && j.ports.exists(p, p in i.ports)).size() == 1)",message="spec.egress in body should not contain overlapping toFQDNs and ports across different rules"	
+	// +kubebuilder:validation:XValidation:rule="self.all(i, self.filter(j, j.toFQDNs.exists(f, f in i.toFQDNs) && j.ports.exists(p, p in i.ports)).size() == 1)",message="spec.egress in body should not contain overlapping toFQDNs and ports across different rules"
 	Egress []EgressRule `json:"egress"`
 
 	// EnabledNetworkType defines which type of IP addresses to allow.
@@ -207,34 +207,54 @@ const (
 type NetworkPolicyReadyConditionReason string
 
 const (
-	NetworkPolicyReady      NetworkPolicyReadyConditionReason = "Ready"
+	// 底层的MultiNetworkPolicy创建成功了，egress至少包含一个规则，也即至少有一个FQDN是解析成功的
+	NetworkPolicySuccess    NetworkPolicyReadyConditionReason = "Success"
+	// 底层的MultiNetworkPolicy创建成功，但egress没有包含任何规则，一般是因为没有任何一个FQDN解析成功
 	NetworkPolicyEmptyRules NetworkPolicyReadyConditionReason = "EmptyRules"
-	NetworkPolicyFailed     NetworkPolicyReadyConditionReason = "Failed"
+	// 底层的MultiNetworkPolicy创建失败
+	NetworkPolicyFailure    NetworkPolicyReadyConditionReason = "Failure"
 )
 
 type NetworkPolicyResolvedConditionReason string
 
 const (
-	NetworkPolicyResolvedError          NetworkPolicyResolvedConditionReason = "ERROR"
-	NetworkPolicyResolvedHostNotFound   NetworkPolicyResolvedConditionReason = "NXHOST"
-	NetworkPolicyResolvedInvalidFormat  NetworkPolicyResolvedConditionReason = "INVALID_FORMAT"
-	NetworkPolicyResolvedTimeout        NetworkPolicyResolvedConditionReason = "TIMEOUT"
-	NetworkPolicyResolvedTemporaryError NetworkPolicyResolvedConditionReason = "TEMPORARY"
-	NetworkPolicyResolvedSuccess        NetworkPolicyResolvedConditionReason = "SUCCESS"
+	// 所有FQDN都解析成功（下面单个FQDN的解析成功也使用这个状态）
+	NetworkPolicyResolvedSuccess        NetworkPolicyResolvedConditionReason = "Success"
+	// 部分FQDN解析成功（下面单个FQDN的解析失败不会直接使用这个状态）
+	NetworkPolicyResolvedPartialSuccess NetworkPolicyResolvedConditionReason = "PartialSuccess"
+	// 所有FQDN都解析失败（下面单个FQDN的解析失败不会直接使用这个状态，而是会细化出各种失败的状态）
+	NetworkPolicyResolvedFailure        NetworkPolicyResolvedConditionReason = "Failure"
+
+	// 针对单个FQDN解析的状态记录
+	// 解析出错了，瞬时，Error其实可以包含很多错误状态
+	NetworkPolicyResolvedError          NetworkPolicyResolvedConditionReason = "Error"
+	// FQDN不存在，包含两种情况：域名不存在；域名存在但主机记录不存在。获得的错误描述都是no such host
+	NetworkPolicyResolvedHostNotFound   NetworkPolicyResolvedConditionReason = "HostNotFound"
+	// FQDN格式错误，在进入真正解析时通过格式检查，有可能抛出这个错误。但实际上由于前端有严格的CEL匹配检查，程序中永远不会出现这个错误
+	NetworkPolicyResolvedInvalidFormat  NetworkPolicyResolvedConditionReason = "InvalidFormat"
+	// FQDN解析等待延时，瞬时
+	NetworkPolicyResolvedTimeout        NetworkPolicyResolvedConditionReason = "Timeout"
+	// FQDN解析中遭遇临时错误，瞬时
+	NetworkPolicyResolvedTemporaryError NetworkPolicyResolvedConditionReason = "TemporaryError"
 )
 
 func (r NetworkPolicyResolvedConditionReason) Priority() int {
 	switch r {
+	case NetworkPolicyResolvedFailure:
+		return 100
+	case NetworkPolicyResolvedPartialSuccess:
+		return 90
+
 	case NetworkPolicyResolvedError:
-		return 5
+		return 10
 	case NetworkPolicyResolvedHostNotFound:
-		return 4
+		return 8
 	case NetworkPolicyResolvedInvalidFormat:
-		return 3
+		return 6
 	case NetworkPolicyResolvedTimeout:
-		return 2
+		return 4
 	case NetworkPolicyResolvedTemporaryError:
-		return 1
+		return 2
 	default:
 		return 0
 	}
@@ -242,12 +262,11 @@ func (r NetworkPolicyResolvedConditionReason) Priority() int {
 
 func (r NetworkPolicyResolvedConditionReason) Transient() bool {
 	switch r {
-	case NetworkPolicyResolvedInvalidFormat:
-		return false
-	case NetworkPolicyResolvedHostNotFound:
-		return false
-	default:
+	// 解析延时、解析时临时错误、解析时错误都被当成瞬时情况处理，因为这些情况随着时间的推移，是有可能消失的
+	case NetworkPolicyResolvedTimeout, NetworkPolicyResolvedTemporaryError, NetworkPolicyResolvedError:
 		return true
+	default:
+		return false
 	}
 }
 

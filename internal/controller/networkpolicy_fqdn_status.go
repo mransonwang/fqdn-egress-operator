@@ -22,33 +22,36 @@ func updateFQDNStatuses(
 	previousLookup := v1alpha1.FQDNStatusList(previous).LookupTable()
 
 	for _, result := range results {
-		if status, ok := previousLookup[result.Domain]; ok {
+		if status, ok := previousLookup[result.FQDN]; ok {
 			cleared := status.Update(result.CIDRs, result.Status, result.Message, retryTimeoutSeconds)
 			newFQDNStatuses = append(newFQDNStatuses, *status)
 
 			if cleared {
                 var eventMsg string
+				var eventReason string
                 if result.Status.Transient() {
+					eventReason = "StaleIPsRemoved"
                     eventMsg = fmt.Sprintf(
-                        "IP Addresses of FQDN %s removed after being stale for %s (Status: %s). Last successful resolved time was %s ago.",
+                        "Removed stale IPs for FQDN %s after %s (Status: %s). Last successful resolution was %s ago",
                         status.FQDN,
                         (time.Duration(retryTimeoutSeconds) * time.Second).String(),
 						status.ResolvedReason,
                         time.Since(status.LastSuccessfulTime.Time).Round(time.Second).String(),
                     )
                 } else {
+					eventReason = "IPsRevoked"
                     eventMsg = fmt.Sprintf(
-                        "IP Addresses of FQDN %s removed immediately because domain not found or no address records exist (no such host) (Status: %s).",
+                        "Immediately removed IPs for FQDN %s: domain not found or no address records exist (Status: %s)",
                         status.FQDN,
                         status.ResolvedReason,
                     )
                 }
 
-                recorder.Event(object, corev1.EventTypeWarning, "FQDNRemoved", eventMsg)
+                recorder.Event(object, corev1.EventTypeWarning, eventReason, eventMsg)
 			}
 		} else {
 			newFQDNStatuses = append(newFQDNStatuses, v1alpha1.NewFQDNStatus(
-				result.Domain,
+				result.FQDN,
 				result.CIDRs,
 				result.Status,
 				result.Message,

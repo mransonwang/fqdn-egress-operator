@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
 	"context"
 	"time"
 
@@ -131,25 +132,26 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		"resolved", np.Status.TotalAddressCount,
 		"applied", np.Status.AppliedAddressCount,
 	)
-	logf.IntoContext(ctx, logger)
+	ctx = logf.IntoContext(ctx, logger)
 
-	// The network policy does not define any Egress rules, delete network policy if it exists
+	// The network policy does not define any egress rules, delete network policy if it exists
 	if networkPolicy == nil {
-		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyFailed, "No Egress rules specified.")
+		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyFailure, "No egress rules specified in the network policy.")
 		if err := r.Client.Status().Update(ctx, np); err != nil {
 			return ctrl.Result{}, err
 		}
 		if err := r.reconcileNetworkPolicyDeletion(ctx, np); err != nil {
 			return ctrl.Result{}, err
 		}
-		logger.Info("No Egress rules, will not requeue until updated")
+		logger.Info("No egress rules specified; will not requeue until the policy is updated.")
 		return ctrl.Result{}, nil
 	}
 
-	// There are Egress rules defined in our FQDN network policy, we create or update the underlying
+	// There are egress rules defined in our FQDN network policy, we create or update the underlying
 	// network policy, so we create it.
 	if err := r.reconcileNetworkPolicyCreation(ctx, np, networkPolicy); err != nil {
-		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyFailed, err.Error())
+		formattedErr := fmt.Sprintf("Failed to apply MultiNetworkPolicy: %v.", err)
+		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyFailure, formattedErr)
 		if err := r.Client.Status().Update(ctx, np); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -157,11 +159,11 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// If the underlying network policy is empty we set a different status
-	// This happens when the FQDN's do not resole to any valid addresses
+	// This happens when the FQDNs do not resolve to any valid addresses
 	if utils.IsEmpty(networkPolicy) {
 		np.SetReadyConditionTrue(
 			v1alpha1.NetworkPolicyEmptyRules,
-			"No domains were resolved to valid IP addresses, egress deny-all is in effect.",
+			"No FQDNs resolved to valid IP addresses; default egress deny-all is in effect.",
 		)
 		if err := r.Client.Status().Update(ctx, np); err != nil {
 			return ctrl.Result{}, err
@@ -171,7 +173,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Creation succeeded, update the status and requeue after TTL
-	np.SetReadyConditionTrue(v1alpha1.NetworkPolicyReady, "The network policy is ready.")
+	np.SetReadyConditionTrue(v1alpha1.NetworkPolicySuccess, "MultiNetworkPolicy was successfully applied and is ready.")
 	if err := r.Client.Status().Update(ctx, np); err != nil {
 		return ctrl.Result{}, err
 	}
