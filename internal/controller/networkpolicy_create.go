@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"maps"
 
 	mnetv1beta1 "github.com/k8snetworkplumbingwg/multi-networkpolicy/pkg/apis/k8s.cni.cncf.io/v1beta1"
 	"github.com/mransonwang/fqdn-egress-operator/api/v1alpha1"
@@ -25,12 +24,18 @@ func (r *NetworkPolicyReconciler) reconcileNetworkPolicyCreation(
 		},
 	}
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, current, func() error {
-		if !utils.MapContains(current.Labels, networkPolicy.Labels) {
-			current.Labels = networkPolicy.Labels
+		if current.Labels == nil {
+			current.Labels = make(map[string]string, len(networkPolicy.Labels))
+		}
+		for k, v := range networkPolicy.Labels {
+			current.Labels[k] = v
 		}
 
-		if !utils.MapContains(current.Annotations, networkPolicy.Annotations) {
-			current.Annotations = maps.Clone(networkPolicy.Annotations)
+		if current.Annotations == nil {
+			current.Annotations = make(map[string]string, len(networkPolicy.Annotations))
+		}
+		for k, v := range networkPolicy.Annotations {
+			current.Annotations[k] = v
 		}
 
 		if !equality.Semantic.DeepEqual(current.Spec, networkPolicy.Spec) {

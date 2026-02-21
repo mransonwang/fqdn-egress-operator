@@ -99,6 +99,12 @@ func RemoveDuplicateCidrsInNetworkPolicy(networkPolicy *mnetv1beta1.MultiNetwork
 			// portSlice的最终形态类似[{Protocol: TCP, Port: 80}, {Protocol: TCP, Port: 443}]
 			portSlice = append(portSlice, p)
 		}
+
+		// 由于portsMap是一个Map，遍历顺序是随机的，放入portSlice的端口顺序也是随机的
+		// 必须在这里对portSlice进行排序，否则底层更新时DeepEqual会因为数组乱序判定为不一致！
+		sort.Slice(portSlice, func(i, j int) bool {
+			return getSinglePortKey(portSlice[i]) < getSinglePortKey(portSlice[j])
+		})		
 		
 		// 生成指纹，从[{Protocol: TCP, Port: 80}, {Protocol: TCP, Port: 443}]生成TCP:80,TCP:443
 		f := getPortsFingerprint(portSlice)
