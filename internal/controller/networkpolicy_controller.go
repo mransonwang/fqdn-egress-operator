@@ -143,7 +143,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.reconcileNetworkPolicyDeletion(ctx, np); err != nil {
 			return ctrl.Result{}, err
 		}
-		logger.Info("No egress rules specified; will not requeue until the policy is updated.")
+		logger.Info("No egress rules specified, will not requeue until the policy is updated.")
 		return ctrl.Result{}, nil
 	}
 
@@ -155,7 +155,9 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.Client.Status().Update(ctx, np); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
+		// 出错后固定每60秒重试一次
+		logger.Info("Network policy failed to apply", "error", err.Error(), "requeueAfter", "60s")
+		return ctrl.Result{RequeueAfter:  60 * time.Second}, nil
 	}
 
 	// If the underlying network policy is empty we set a different status
@@ -163,7 +165,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if utils.IsEmpty(networkPolicy) {
 		np.SetReadyConditionTrue(
 			v1alpha1.NetworkPolicyEmptyRules,
-			"No FQDNs resolved to valid IP addresses. The default egress deny-all is in effect.",
+			"No FQDNs resolved to valid IP addresses, the default egress deny-all is in effect.",
 		)
 		if err := r.Client.Status().Update(ctx, np); err != nil {
 			return ctrl.Result{}, err
