@@ -150,7 +150,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// There are egress rules defined in our FQDN network policy, we create or update the underlying
 	// network policy, so we create it.
 	if err := r.reconcileNetworkPolicyCreation(ctx, np, networkPolicy); err != nil {
-		formattedErr := fmt.Sprintf("Failed to apply MultiNetworkPolicy: %v.", err)
+		formattedErr := fmt.Sprintf("Failed to apply network policy: %v.", err)
 		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyFailure, formattedErr)
 		if err := r.Client.Status().Update(ctx, np); err != nil {
 			return ctrl.Result{}, err
@@ -163,7 +163,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if utils.IsEmpty(networkPolicy) {
 		np.SetReadyConditionTrue(
 			v1alpha1.NetworkPolicyEmptyRules,
-			"No FQDNs resolved to valid IP addresses; default egress deny-all is in effect.",
+			"No FQDNs resolved to valid IP addresses. The default egress deny-all is in effect.",
 		)
 		if err := r.Client.Status().Update(ctx, np); err != nil {
 			return ctrl.Result{}, err
@@ -173,7 +173,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Creation succeeded, update the status and requeue after TTL
-	np.SetReadyConditionTrue(v1alpha1.NetworkPolicySuccess, "MultiNetworkPolicy was successfully applied and is ready.")
+	np.SetReadyConditionTrue(v1alpha1.NetworkPolicySuccess, "Network policy was successfully applied and is ready.")
 	if err := r.Client.Status().Update(ctx, np); err != nil {
 		return ctrl.Result{}, err
 	}
