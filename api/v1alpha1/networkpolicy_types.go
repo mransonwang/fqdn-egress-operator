@@ -321,12 +321,20 @@ type FQDNStatus struct {
 type NetworkPolicyStatus struct {
 	// FQDNs contains the detailed resolution status for each FQDN defined in the egress rules.
 	FQDNs []FQDNStatus `json:"fqdns,omitempty"`
+	// ActiveFQDNCount represents the number of FQDNs currently holding valid IPs (including cached ones).
+	// +kubebuilder:validation:Optional
+	ActiveFQDNCount int32 `json:"activeFQDNCount"`
+	// FailingFQDNCount represents the number of FQDNs that failed to resolve and have no cached IPs.
+	// +kubebuilder:validation:Optional
+	FailingFQDNCount int32 `json:"failingFQDNCount"`
 	// AppliedAddressCount is the number of unique IP addresses successfully applied to the underlying network policy.
-	AppliedAddressCount int32 `json:"appliedAddressCount,omitempty"`
+	// +kubebuilder:validation:Optional
+	AppliedAddressCount int32 `json:"appliedAddressCount"`
 	// TotalAddressCount is the total number of IP addresses resolved from all FQDNs before filtering and deduplication.
-	TotalAddressCount int32 `json:"totalAddressCount,omitempty"`
+	// +kubebuilder:validation:Optional
+	TotalAddressCount int32 `json:"totalAddressCount"`
 	// Conditions represents the latest available observations of the NetworkPolicy's current state.
-	Conditions []metav1.Condition `json:"conditions"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// ObservedGeneration represents the most recent generation observed by the controller.
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
@@ -342,8 +350,10 @@ type NetworkPolicyStatus struct {
 // +kubebuilder:resource:path=networkpolicies,singular=networkpolicy,scope=Namespaced,shortName={fe,fnp}
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`,description="Ready condition status"
 // +kubebuilder:printcolumn:name="Resolved",type=string,JSONPath=`.status.conditions[?(@.type=="Resolved")].status`,description="Resolved condition status"
+// +kubebuilder:printcolumn:name="Active FQDNs",type=integer,JSONPath=`.status.activeFQDNCount`,description="FQDNs with valid IPs"
 // +kubebuilder:printcolumn:name="Resolved IPs",type=integer,JSONPath=`.status.totalAddressCount`,description="Number of resolved IPs"
 // +kubebuilder:printcolumn:name="Applied IPs",type=integer,JSONPath=`.status.appliedAddressCount`,description="Number of applied IPs"
+// +kubebuilder:printcolumn:name="Failing FQDNs",type=integer,JSONPath=`.status.failingFQDNCount`,description="FQDNs failing to resolve"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type NetworkPolicy struct {
 	metav1.TypeMeta   `json:",inline"`

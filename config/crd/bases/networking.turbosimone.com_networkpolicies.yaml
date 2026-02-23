@@ -12,7 +12,7 @@ spec:
     listKind: NetworkPolicyList
     plural: networkpolicies
     shortNames:
-    - fenp
+    - fe
     - fnp
     singular: networkpolicy
   scope: Namespaced
@@ -26,6 +26,10 @@ spec:
       jsonPath: .status.conditions[?(@.type=="Resolved")].status
       name: Resolved
       type: string
+    - description: FQDNs with valid IPs
+      jsonPath: .status.activeFQDNCount
+      name: Active FQDNs
+      type: integer
     - description: Number of resolved IPs
       jsonPath: .status.totalAddressCount
       name: Resolved IPs
@@ -33,6 +37,10 @@ spec:
     - description: Number of applied IPs
       jsonPath: .status.appliedAddressCount
       name: Applied IPs
+      type: integer
+    - description: FQDNs failing to resolve
+      jsonPath: .status.failingFQDNCount
+      name: Failing FQDNs
       type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -115,6 +123,7 @@ spec:
                         - protocol
                         type: object
                       maxItems: 10
+                      minItems: 1
                       type: array
                       x-kubernetes-list-map-keys:
                       - protocol
@@ -133,6 +142,7 @@ spec:
                         pattern: ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$
                         type: string
                       maxItems: 100
+                      minItems: 1
                       type: array
                       x-kubernetes-list-type: set
                   required:
@@ -140,6 +150,7 @@ spec:
                   - toFQDNs
                   type: object
                 maxItems: 30
+                minItems: 1
                 type: array
                 x-kubernetes-validations:
                 - message: spec.egress in body should not contain overlapping toFQDNs
@@ -280,6 +291,11 @@ spec:
           status:
             description: NetworkPolicyStatus defines the observed state of NetworkPolicy.
             properties:
+              activeFQDNCount:
+                description: ActiveFQDNCount represents the number of FQDNs currently
+                  holding valid IPs (including cached ones).
+                format: int32
+                type: integer
               appliedAddressCount:
                 description: AppliedAddressCount is the number of unique IP addresses
                   successfully applied to the underlying network policy.
@@ -343,6 +359,11 @@ spec:
                   - type
                   type: object
                 type: array
+              failingFQDNCount:
+                description: FailingFQDNCount represents the number of FQDNs that
+                  failed to resolve and have no cached IPs.
+                format: int32
+                type: integer
               fqdns:
                 description: FQDNs contains the detailed resolution status for each
                   FQDN defined in the egress rules.
@@ -396,8 +417,6 @@ spec:
                   resolved from all FQDNs before filtering and deduplication.
                 format: int32
                 type: integer
-            required:
-            - conditions
             type: object
         type: object
     served: true

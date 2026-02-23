@@ -111,6 +111,10 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// egress: []
 	if mnp == nil {
+		if np.Status.ObservedGeneration == np.Generation {
+			return ctrl.Result{}, nil
+		}
+
 		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyReadyFailure, "Network policy has no egress rules specified.")
 		if err := r.updateStatusIfNeeded(ctx, np, previous); err != nil {
 			return ctrl.Result{}, err
@@ -162,6 +166,19 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 func (r *NetworkPolicyReconciler) updateStatusIfNeeded(ctx context.Context, np *v1alpha1.NetworkPolicy, previous *v1alpha1.NetworkPolicy) error {
 	logger := logf.FromContext(ctx)
+
+	np.Status.ObservedGeneration = np.Generation
+
+	var activeCount, failingCount int32
+	for _, fqdnStatus := range np.Status.FQDNs {
+		if len(fqdnStatus.Addresses) > 0 {
+			activeCount++
+		} else {
+			failingCount++
+		}
+	}
+	np.Status.ActiveFQDNCount = activeCount
+	np.Status.FailingFQDNCount = failingCount	
 
 	sortStatus := func(status *v1alpha1.NetworkPolicyStatus) {
 		sort.Slice(status.FQDNs, func(i, j int) bool {
