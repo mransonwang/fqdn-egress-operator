@@ -7,16 +7,16 @@ import (
 
 // SetResolvedCondition updates the Resolved condition based on the provided reason and message.
 // If the reason indicates success, the status is set to True with a standard success message.
-func (np *NetworkPolicy) SetResolveCondition(reason NetworkPolicyResolvedConditionReason, message string) {
+func (np *NetworkPolicy) SetResolvedCondition(reason NetworkPolicyResolutionReason, message string) {
 	condition := metav1.ConditionFalse
 	// 只有NetworkPolicyResolvedSuccess才会置其为Ture，否则其他两种状态PartialSuccess和Failure都是False
 	// 使用resolver.go中设定的提示信息，而不要在这里硬编码
-	if reason == NetworkPolicyResolvedSuccess {
+	if reason == NetworkPolicyResolutionSuccess {
 		condition = metav1.ConditionTrue
 		//message = "The network policy resolved successfully."
 	}
 	meta.SetStatusCondition(&np.Status.Conditions, metav1.Condition{
-		Type:               string(NetworkPolicyResolvedCondition),
+		Type:               string(NetworkPolicyResolved),
 		Status:             condition,
 		Reason:             string(reason),
 		Message:            message,
@@ -26,9 +26,9 @@ func (np *NetworkPolicy) SetResolveCondition(reason NetworkPolicyResolvedConditi
 
 // SetReadyConditionTrue sets the Ready condition to True with a standard success message.
 // Updates the ObservedGeneration to reflect the current spec generation.
-func (np *NetworkPolicy) SetReadyConditionTrue(reason NetworkPolicyReadyConditionReason, message string) {
+func (np *NetworkPolicy) SetReadyConditionTrue(reason NetworkPolicyReadyReason, message string) {
 	meta.SetStatusCondition(&np.Status.Conditions, metav1.Condition{
-		Type:               string(NetworkPolicyReadyCondition),
+		Type:               string(NetworkPolicyReady),
 		Status:             metav1.ConditionTrue,
 		Reason:             string(reason),
 		Message:            message,
@@ -38,9 +38,9 @@ func (np *NetworkPolicy) SetReadyConditionTrue(reason NetworkPolicyReadyConditio
 }
 
 // SetReadyConditionFalse sets the Ready condition to False with the provided reason and message.
-func (np *NetworkPolicy) SetReadyConditionFalse(reason NetworkPolicyReadyConditionReason, message string) {
+func (np *NetworkPolicy) SetReadyConditionFalse(reason NetworkPolicyReadyReason, message string) {
 	meta.SetStatusCondition(&np.Status.Conditions, metav1.Condition{
-		Type:               string(NetworkPolicyReadyCondition),
+		Type:               string(NetworkPolicyReady),
 		Status:             metav1.ConditionFalse,
 		Reason:             string(reason),
 		Message:            message,

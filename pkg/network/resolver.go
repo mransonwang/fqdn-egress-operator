@@ -14,7 +14,7 @@ import (
 )
 
 type lookupError struct {
-	Reason  v1alpha1.NetworkPolicyResolvedConditionReason
+	Reason  v1alpha1.NetworkPolicyResolutionReason
 	Message string
 }
 
@@ -29,7 +29,7 @@ type DNSResolverResult struct {
 	// Error that the lookup may have caused
 	Error error
 	// Resolved status
-	Status v1alpha1.NetworkPolicyResolvedConditionReason
+	Status v1alpha1.NetworkPolicyResolutionReason
 	// Message for the reason
 	Message string
 	// CIDRs found for the given FQDN if no error occurred
@@ -58,34 +58,34 @@ func NewDNSResolverResult(
 }
 
 // resolvedReason returns the reason for the status of the resolved result
-func resolvedReason(err error) v1alpha1.NetworkPolicyResolvedConditionReason {
+func resolvedReason(err error) v1alpha1.NetworkPolicyResolutionReason {
 	if err == nil {
-		return v1alpha1.NetworkPolicyResolvedSuccess
+		return v1alpha1.NetworkPolicyResolutionSuccess
 	}
 	var lookupErr *lookupError
 	if errors.As(err, &lookupErr) {
 		return lookupErr.Reason
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
-		return v1alpha1.NetworkPolicyResolvedTimeout
+		return v1alpha1.NetworkPolicyResolutionTimeout
 	}
 	if errors.Is(err, context.Canceled) {
-		return v1alpha1.NetworkPolicyResolvedError
+		return v1alpha1.NetworkPolicyResolutionError
 	}
 	var dnsErr *net.DNSError
 	if !errors.As(err, &dnsErr) {
-		return v1alpha1.NetworkPolicyResolvedError
+		return v1alpha1.NetworkPolicyResolutionError
 	}
 	if dnsErr.IsTimeout {
-		return v1alpha1.NetworkPolicyResolvedTimeout
+		return v1alpha1.NetworkPolicyResolutionTimeout
 	}
 	if dnsErr.IsNotFound {
-		return v1alpha1.NetworkPolicyResolvedHostNotFound
+		return v1alpha1.NetworkPolicyResolutionHostNotFound
 	}
 	if dnsErr.IsTemporary {
-		return v1alpha1.NetworkPolicyResolvedTemporaryError
+		return v1alpha1.NetworkPolicyResolutionTemporaryError
 	}
-	return v1alpha1.NetworkPolicyResolvedError
+	return v1alpha1.NetworkPolicyResolutionError
 }
 
 // resolvedMessage returns an error message for the given error
@@ -140,33 +140,34 @@ func (dlr DNSResolverResultList) CIDRs() []*v1alpha1.CIDR {
 }
 
 // AggregatedResolvedStatus returns the reason with the highest priority in the result list
-func (dlr DNSResolverResultList) AggregatedResolvedStatus() v1alpha1.NetworkPolicyResolvedConditionReason {
+func (dlr DNSResolverResultList) AggregatedResolvedStatus() v1alpha1.NetworkPolicyResolutionReason {
 	total := len(dlr)
 	if total == 0 {
-		return v1alpha1.NetworkPolicyResolvedSuccess
+		return v1alpha1.NetworkPolicyResolutionSuccess
 	}
 
 	successCount := 0
 	for i := range dlr {
-		if dlr[i].Status == v1alpha1.NetworkPolicyResolvedSuccess {
+		if dlr[i].Status == v1alpha1.NetworkPolicyResolutionSuccess {
 			successCount++
 		}
 	}
 
 	if successCount == total {
-		return v1alpha1.NetworkPolicyResolvedSuccess
+		return v1alpha1.NetworkPolicyResolutionSuccess
 	}
 	if successCount == 0 {
-		return v1alpha1.NetworkPolicyResolvedFailure
+		return v1alpha1.NetworkPolicyResolutionFailure
 	}
-	return v1alpha1.NetworkPolicyResolvedPartialSuccess
+	return v1alpha1.NetworkPolicyResolutionPartialSuccess
 }
 
 // AggregatedResolvedMessage returns the message with the highest priority in the result list
 func (dlr DNSResolverResultList) AggregatedResolvedMessage() string {
 	total := len(dlr)
+	// egress: []
 	if total == 0 {
-		return "No FQDNs defined in the network policy."
+		return "Network policy has no FQDNs defined."
 	}
 
 	successCount := 0
@@ -174,7 +175,7 @@ func (dlr DNSResolverResultList) AggregatedResolvedMessage() string {
 
 	for i := range dlr {
 		result := dlr[i]
-		if result.Status == v1alpha1.NetworkPolicyResolvedSuccess {
+		if result.Status == v1alpha1.NetworkPolicyResolutionSuccess {
 			successCount++
 		} else {
 			// 按照五种状态排优先级，取优先级最高的
@@ -237,7 +238,7 @@ func (r *DNSResolver) lookupIP(
 ) ([]*v1alpha1.CIDR, error) {
 	if !host.Valid() {
 		return nil, &lookupError{
-			Reason:  v1alpha1.NetworkPolicyResolvedInvalidFormat,
+			Reason:  v1alpha1.NetworkPolicyResolutionInvalidFormat,
 			Message: fmt.Sprintf("Received invalid FQDN '%s'", host),
 		}
 	}
@@ -286,7 +287,7 @@ func (r *DNSResolver) Resolve(
 			case <-ctx.Done():
 				// parent context cancelled before acquiring slot
 				results <- NewDNSResolverResult(rFQDN, nil, &lookupError{
-					Reason:  v1alpha1.NetworkPolicyResolvedError,
+					Reason:  v1alpha1.NetworkPolicyResolutionError,
 					Message: "Context canceled before resolution could start",
 				})
 				return

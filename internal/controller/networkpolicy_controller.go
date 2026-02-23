@@ -17,8 +17,9 @@ limitations under the License.
 package controller
 
 import (
-	"fmt"
 	"context"
+	"fmt"
+	"sort"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -27,9 +28,11 @@ import (
 
 	"github.com/mransonwang/fqdn-egress-operator/pkg/network"
 	"github.com/mransonwang/fqdn-egress-operator/pkg/utils"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/client-go/tools/record"
 
+	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,9 +41,7 @@ import (
 	"github.com/mransonwang/fqdn-egress-operator/api/v1alpha1"
 )
 
-// DNSResolver resolves domains to IP addresses
 type DNSResolver interface {
-	// Resolve all the given fqdns to a DNSResolverResult
 	Resolve(
 		ctx context.Context,
 		timeout time.Duration,
@@ -50,7 +51,6 @@ type DNSResolver interface {
 	) network.DNSResolverResultList
 }
 
-// NetworkPolicyReconciler reconciles a NetworkPolicy object
 type NetworkPolicyReconciler struct {
 	client.Client
 	Scheme                *runtime.Scheme
@@ -79,108 +79,119 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	/*
-	patch := client.MergeFrom(np.DeepCopy())
+	previous := np.DeepCopy()
 
-	if np.Spec.TargetNetwork != "" {
-		expectedAnnotationValue := fmt.Sprintf("%s/%s", np.Namespace, np.Spec.TargetNetwork)
-		annotationKey := "k8s.v1.cni.cncf.io/policy-for"
-
-		if np.Annotations == nil || np.Annotations[annotationKey] != expectedAnnotationValue {
-			if np.Annotations == nil {
-				np.Annotations = make(map[string]string)
-			}
-			np.Annotations[annotationKey] = expectedAnnotationValue
-
-			if err := r.Patch(ctx, np, patch); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			return ctrl.Result{RequeueAfter: time.Second}, nil
-		}
-	}
-	*/	
-
-	// Resolve the FQDNs to IP addresses
-	resolveTimeout := time.Duration(np.Spec.ResolveTimeoutSeconds) * time.Second
+	resolutionTimeout := time.Duration(np.Spec.ResolutionTimeoutSeconds) * time.Second
 	results := r.DNSResolver.Resolve(
-		ctx, resolveTimeout, r.MaxConcurrentResolves, np.Spec.EnabledNetworkType, np.FQDNs(),
+		ctx, resolutionTimeout, r.MaxConcurrentResolves, np.Spec.EnabledNetworkType, np.FQDNs(),
 	)
 
 	np.Status.FQDNs = updateFQDNStatuses(
 		r.EventRecorder, np, np.Status.FQDNs, results, int(np.Spec.RetryTimeoutSeconds),
 	)
 
-	// Generate a network policy from the FQDN based network policy using the resolved addresses
-	networkPolicy := np.ToMultiNetworkPolicy(np.Status.FQDNs)
+	mnp := np.ToMultiNetworkPolicy(np.Status.FQDNs)
 
 	np.Status.TotalAddressCount = int32(len(results.CIDRs()))
-	utils.RemoveDuplicateCidrsInNetworkPolicy(networkPolicy)
-	np.Status.AppliedAddressCount = int32((utils.CountDeDupedAddresses(networkPolicy)))
-	np.Status.LatestLookupTime = metav1.NewTime(time.Now())
+	utils.RemoveDuplicateCidrsInNetworkPolicy(mnp)
+	np.Status.AppliedAddressCount = int32((utils.CountDeDupedAddresses(mnp)))
 
-	// Set the resolved status condition
 	resolvedStatus := results.AggregatedResolvedStatus()
-	np.SetResolveCondition(
+	np.SetResolvedCondition(
 		resolvedStatus,
 		results.AggregatedResolvedMessage(),
 	)
 
 	logger := logf.FromContext(ctx).WithValues(
-		"policy", np.GetName(), "namespace", np.GetNamespace(),
 		"status", resolvedStatus,
 		"resolved", np.Status.TotalAddressCount,
 		"applied", np.Status.AppliedAddressCount,
 	)
 	ctx = logf.IntoContext(ctx, logger)
 
-	// The network policy does not define any egress rules, delete network policy if it exists
-	if networkPolicy == nil {
-		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyFailure, "No egress rules specified in the network policy.")
-		if err := r.Client.Status().Update(ctx, np); err != nil {
+	// egress: []
+	if mnp == nil {
+		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyReadyFailure, "Network policy has no egress rules specified.")
+		if err := r.updateStatusIfNeeded(ctx, np, previous); err != nil {
 			return ctrl.Result{}, err
 		}
+		// 要去删除底层对应的MultiNetworkPolicy，因为有可能以前的策略中egress并不是空数组，那现在变成egress: []了，不能留着
+		// 但对于第一次创建就使用egress: []的情况，这里实际上是没有底层的MultiNetworkPolicy可以删除的，被调用函数内部已自行做判断
 		if err := r.reconcileNetworkPolicyDeletion(ctx, np); err != nil {
 			return ctrl.Result{}, err
 		}
-		logger.Info("No egress rules specified, will not requeue until the policy is updated.")
+		// 删除完底层的MultiNetworkPolicy后，自己静默直到被修改后唤醒
+		logger.Info("Network policy has no egress rules specified, will not requeue until the policy is updated")
 		return ctrl.Result{}, nil
 	}
 
-	// There are egress rules defined in our FQDN network policy, we create or update the underlying
-	// network policy, so we create it.
-	if err := r.reconcileNetworkPolicyCreation(ctx, np, networkPolicy); err != nil {
-		formattedErr := fmt.Sprintf("Failed to apply network policy: %v.", err)
-		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyFailure, formattedErr)
-		if err := r.Client.Status().Update(ctx, np); err != nil {
+	// egress: [{...},{...}] 包含有正常的规则，进行正常处理就行
+	if err := r.reconcileNetworkPolicyCreation(ctx, np, mnp); err != nil {
+		formattedErr := fmt.Sprintf("Network policy failed to apply: %v.", err)
+		np.SetReadyConditionFalse(v1alpha1.NetworkPolicyReadyFailure, formattedErr)
+		if err := r.updateStatusIfNeeded(ctx, np, previous); err != nil {
 			return ctrl.Result{}, err
 		}
-		// 出错后固定每60秒重试一次
+		// 创建底层MultiNetworkPolicy出错后固定每60秒重试一次
 		logger.Info("Network policy failed to apply", "error", err.Error(), "requeueAfter", "60s")
 		return ctrl.Result{RequeueAfter:  60 * time.Second}, nil
 	}
 
-	// If the underlying network policy is empty we set a different status
-	// This happens when the FQDNs do not resolve to any valid addresses
-	if utils.IsEmpty(networkPolicy) {
+	// 无法解析出任何IP地址，因此无法构造egress: []中的内容，所以生成的底层MultiNetworkPolicy实质上没有egress元素
+	// 没有egress元素实质上等同于egress: []的效果
+	if utils.IsEmpty(mnp) {
 		np.SetReadyConditionTrue(
-			v1alpha1.NetworkPolicyEmptyRules,
-			"No FQDNs resolved to valid IP addresses, the default egress deny-all is in effect.",
+			v1alpha1.NetworkPolicyReadyEmptyRules,
+			"Network policy has no FQDNs resolved to valid IP addresses, the default egress deny-all is in effect.",
 		)
-		if err := r.Client.Status().Update(ctx, np); err != nil {
+		if err := r.updateStatusIfNeeded(ctx, np, previous); err != nil {
 			return ctrl.Result{}, err
 		}
-		logger.Info("Network policy is empty", "requeueAfter", np.Spec.TTLSeconds)
+		logger.Info("Network policy has no FQDNs resolved to valid IP addresses", "requeueAfter", np.Spec.TTLSeconds)
 		return ctrl.Result{RequeueAfter: time.Duration(np.Spec.TTLSeconds) * time.Second}, nil
 	}
 
 	// Creation succeeded, update the status and requeue after TTL
-	np.SetReadyConditionTrue(v1alpha1.NetworkPolicySuccess, "Network policy was successfully applied and is ready.")
-	if err := r.Client.Status().Update(ctx, np); err != nil {
+	np.SetReadyConditionTrue(v1alpha1.NetworkPolicyReadySuccess, "Network policy was successfully applied.")
+	if err := r.updateStatusIfNeeded(ctx, np, previous); err != nil {
 		return ctrl.Result{}, err
 	}
 	logger.Info("Reconciliation succeeded", "requeueAfter", np.Spec.TTLSeconds)
 	return ctrl.Result{RequeueAfter: time.Duration(np.Spec.TTLSeconds) * time.Second}, nil
+}
+
+func (r *NetworkPolicyReconciler) updateStatusIfNeeded(ctx context.Context, np *v1alpha1.NetworkPolicy, previous *v1alpha1.NetworkPolicy) error {
+	logger := logf.FromContext(ctx)
+
+	sortStatus := func(status *v1alpha1.NetworkPolicyStatus) {
+		sort.Slice(status.FQDNs, func(i, j int) bool {
+			return string(status.FQDNs[i].FQDN) < string(status.FQDNs[j].FQDN)
+		})
+		for i := range status.FQDNs {
+			sort.Strings(status.FQDNs[i].Addresses)
+		}
+	}
+
+	sortStatus(&np.Status)
+	sortStatus(&previous.Status)
+
+	if equality.Semantic.DeepEqual(previous.Status, np.Status) {
+		// logger.Info("Network policy status is unchanged")
+		return nil
+	}
+
+	err := r.Client.Status().Update(ctx, np)
+	if err != nil {
+		if errors.IsConflict(err) {
+			// 并发冲突通常是瞬时的，下次调和会修补，无需当作错误抛出
+			return nil
+		}
+		return err
+	}
+
+	// 成功回写后打印日志
+	logger.Info("Network policy status was updated")
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

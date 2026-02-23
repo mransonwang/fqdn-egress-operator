@@ -54,7 +54,7 @@ func (c *CIDR) IsPrivate() bool {
 
 type CIDRList []*CIDR
 
-func (l CIDRList) String() []string {
+func (l CIDRList) Strings() []string {
 	result := make([]string, 0, len(l))
 	for _, cidr := range l {
 		result = append(result, cidr.String())
@@ -175,6 +175,9 @@ func (np *NetworkPolicy) FQDNs() []FQDN {
 // ToMultiNetworkPolicy converts the NetworkPolicy to a mnetv1beta1.MultiNetworkPolicy.
 // If no Egress rules are specified, nil is returned.
 func (np *NetworkPolicy) ToMultiNetworkPolicy(fqdnStatuses []FQDNStatus) *mnetv1beta1.MultiNetworkPolicy {
+	// 前端没有校验的情况下，egress: []和egress: [{}]都是可以传入的，而egress: {}由于类型不匹配，前端不管是否有校验的情况下都会报错
+	// 目前前端已添加校验，所以极端的全阻断egress: []和全放行egress: [{}]都是无法传入的
+	// 所以，这里是永远不会返回nil值，但是程序处理逻辑还是保留
 	numRules := len(np.Spec.Egress)
 	if numRules == 0 {
 		return nil
@@ -232,51 +235,64 @@ func (np *NetworkPolicy) ToMultiNetworkPolicy(fqdnStatuses []FQDNStatus) *mnetv1
 // Update updates the status of the FQDN.
 // If addresses were cleared due to an error during the update, the method returns true.
 func (f *FQDNStatus) Update(
-	cidrs []*CIDR, reason NetworkPolicyResolvedConditionReason, message string, retryTimeoutSeconds int,
+	cidrs []*CIDR, reason NetworkPolicyResolutionReason, message string, retryTimeoutSeconds int,
 ) bool {
 	cleared := false
-	if reason == NetworkPolicyResolvedSuccess {
-		f.LastSuccessfulTime = metav1.Now()
-		f.Addresses = CIDRList(cidrs).String()
-	}
-	// On transient errors we want to adhere to the retry timeout specification
-	if reason != NetworkPolicyResolvedSuccess && reason.Transient() {
-		retryLimitReached := time.Now().After(
-			f.LastSuccessfulTime.Add(time.Duration(retryTimeoutSeconds) * time.Second),
-		)
-		if retryLimitReached {
-			if len(f.Addresses) > 0 {
-				f.Addresses = []string{}
-				cleared = true
+
+	if reason == NetworkPolicyResolutionSuccess {
+		// 只要成功，立刻重置失败时间戳为nil
+		f.FailingSince = nil
+		f.Addresses = CIDRList(cidrs).Strings()
+	} else if reason.Transient() {
+		// 如果是瞬时错误，而且是第一次出错
+		if f.FailingSince == nil {
+			// 记录起点
+			now := metav1.Now()
+			f.FailingSince = &now
+		} else {
+			// 持续失败中，对比ResolvedFailingSince判断是否真正超时
+			deadline := f.FailingSince.Add(time.Duration(retryTimeoutSeconds) * time.Second)
+			if time.Now().After(deadline) {
+				if len(f.Addresses) > 0 {
+					f.Addresses = []string{}
+					cleared = true
+				}
 			}
 		}
-	}
-	// On non-transient errors we clear the addresses immediately
-	if reason != NetworkPolicyResolvedSuccess && !reason.Transient() {
+	} else {
+		// 永久性错误
 		if len(f.Addresses) > 0 {
 			f.Addresses = []string{}
 			cleared = true
 		}
+		if f.FailingSince == nil {
+			now := metav1.Now()
+			f.FailingSince = &now
+		}
 	}
-	if f.ResolvedReason != reason {
+
+	// 仅在状态变化时更新转换时间
+	if f.Reason != reason {
 		f.LastTransitionTime = metav1.Now()
 	}
-	f.ResolvedReason = reason
-	f.ResolvedMessage = message
+	f.Reason = reason
+	f.Message = message
+
 	return cleared
 }
 
-func NewFQDNStatus(fqdn FQDN, cidrs []*CIDR, reason NetworkPolicyResolvedConditionReason, message string) FQDNStatus {
+/*
+func NewFQDNStatus(fqdn FQDN, cidrs []*CIDR, reason NetworkPolicyResolutionReason, message string) FQDNStatus {
 	timeNow := metav1.Now()
 	return FQDNStatus{
-		FQDN:               fqdn,
-		LastSuccessfulTime: timeNow,
+		FQDN: fqdn,
+		//LastSuccessfulTime: timeNow,
 		LastTransitionTime: timeNow,
-		ResolvedReason:     reason,
-		ResolvedMessage:    message,
+		Reason:             reason,
+		Message:            message,
 		Addresses:          CIDRList(cidrs).String(),
 	}
-}
+}*/
 
 type FQDNStatusList []FQDNStatus
 

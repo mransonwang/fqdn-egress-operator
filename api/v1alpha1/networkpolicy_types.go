@@ -24,33 +24,33 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// NetworkType defines the available ip address types to resolve
+// NetworkType defines the IP address protocol types allowed for DNS resolution.
 //
-//   - Options are one of: 'all', 'ipv4', 'ipv6'
-//
-// +kubebuilder:validation:Enum=all;ipv4;ipv6
+// +kubebuilder:validation:Enum=ipv4;ipv6;all
 type NetworkType string
 
 const (
-	All  NetworkType = "all"
 	IPv4 NetworkType = "ipv4"
 	IPv6 NetworkType = "ipv6"
+	All  NetworkType = "all"
 )
 
-// ResolverString returns the string value that net.Resolver expects in LookupIP.
+// ResolverString returns the protocol string parameter expected by the standard net.Resolver during LookupIP.
 // Returns an empty string for unknown types.
 func (n NetworkType) ResolverString() string {
 	switch n {
-	case All:
-		return "ip"
 	case IPv4:
 		return "ip4"
 	case IPv6:
 		return "ip6"
+	case All:
+		return "ip"
 	}
 	return ""
 }
 
+// Label defines the label key name used for matching resources.
+//
 // +kubebuilder:validation:Enum=vm.kubevirt.io/name;app.kubernetes.io/name
 type Label string
 
@@ -59,252 +59,276 @@ const (
 	LabelWithKubernetesAppName  Label = "app.kubernetes.io/name"
 )
 
-// Shadow MatchLabel struct
+// MatchLabel is a shadow struct used to apply custom kubebuilder validations.
+// It defines the label key-value pair used to select target Pods while enforcing strict input constraints.
 type MatchLabel struct {
-	// Label is typically used to identify a pod.
+	// Label is the label key that the target resource must contain.
+	//
 	// +kubebuilder:default="vm.kubevirt.io/name"
 	Label Label `json:"label"`
-	// The value corresponding to the label.
+	// Value is the string value corresponding to the label key.
+	//
 	// +kubebuilder:validation:MinLength=1
 	Value string `json:"value"`
 }
 
-// The value corresponding to the label.
+// Value represents a single string value in the label selector requirement.
+//
 // +kubebuilder:validation:MinLength=1
 type LabelValue string
 
-// Shadow LabelSelectorRequirement struct
+// LabelSelectorRequirement is a shadow struct of the standard metav1.LabelSelectorRequirement.
+// It is specifically designed to apply custom kubebuilder validations (e.g., Enum constraints, MaxItems) to the label selector filter conditions.
 type LabelSelectorRequirement struct {
-	// Key is the label key that the selector applies to.
+	// Key is the target label key that the selector applies to.
+	//
 	// +kubebuilder:default="vm.kubevirt.io/name"
 	// +kubebuilder:validation:Enum=vm.kubevirt.io/name;app.kubernetes.io/name
 	Key string `json:"key"`
 	// Operator represents a key's relationship to a set of values. Valid operators are In and NotIn.
+	//
 	// +kubebuilder:default="In"
 	// +kubebuilder:validation:Enum=In;NotIn
 	Operator metav1.LabelSelectorOperator `json:"operator"`
 	// Values is an array of string values. If the operator is In or NotIn, the values array must be non-empty.
+	//
 	// +kubebuilder:validation:MaxItems=50
 	// +listType=set
 	Values []LabelValue `json:"values"`
 }
 
-// Shadow MultiNetworkPolicyPort struct
+// MultiNetworkPolicyPort is a shadow struct used to apply custom kubebuilder validations.
+// It mirrors the underlying network policy port definition while enforcing strict port range and protocol constraints on user inputs.
 type MultiNetworkPolicyPort struct {
-	// Protocol defines network protocols supported for things like container ports.
+	// Protocol defines the transport layer protocol of the container network port.
+	//
 	// +kubebuilder:default="TCP"
 	// +kubebuilder:validation:Enum=TCP;UDP;SCTP
 	Protocol corev1.Protocol `json:"protocol"`
-	// The specific port number to allow.
+	// Port is the specific port number allowed for traffic.
+	//
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	Port int32 `json:"port"`
 }
 
-// FQDN is short for Fully Qualified Domain Name and represents a complete domain name that uniquely identifies a host on the internet. It must consist of one or more labels separated by dots (e.g., "api.example.com"), where each label can contain letters, digits, and hyphens, but cannot start or end with a hyphen. The FQDN must end with a top-level domain (e.g., ".com", ".org") of at least two characters.
+// FQDN represents a Fully Qualified Domain Name used to uniquely identify a host on the internet.
+//
+// Format constraints:
+//	▸ Rule: Labels separated by dots (e.g., api.example.com)
+//	▸ Rule: Alphanumeric and hyphens only
+//	▸ Rule: No leading or trailing hyphens
+//	▸ Rule: Top-level domain must be 2+ characters
 //
 // +kubebuilder:validation:Pattern=`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`
 type FQDN string
 
-// EgressRule defines rules for outbound network traffic to the specified FQDNs on the specified ports.
-// Each FQDNs IP's will be looked up periodically to update the underlying NetworkPolicy.
+// EgressRule defines the rules for outbound network traffic.
+// The system will periodically resolve the IP addresses of the FQDNs in the rule to dynamically update the underlying network policy.
 type EgressRule struct {
-	// ToFQDNs are the FQDNs to which traffic is allowed (outgoing).
+	// ToFQDNs contains the list of target FQDNs allowed for outbound traffic communication.
+	// 
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=100
 	// +listType=set
 	ToFQDNs []FQDN `json:"toFQDNs"`
-	// Ports describes the ports to allow traffic on.
+	// Ports specifies the list of network ports allowed for outbound traffic access.
+	//
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=10
 	// +listType=map
 	// +listMapKey=protocol
 	// +listMapKey=port
 	Ports []MultiNetworkPolicyPort `json:"ports"`
-	// When set, overwrites the default behavior of the same field in NetworkPolicySpec.
+	// BlockPrivateIPs overrides the default configuration of the same name at the NetworkPolicySpec level for the current rule.
+	//
+	// Configuration:
+	//	▸ Default: Inherits from NetworkPolicySpec.BlockPrivateIPs
 	BlockPrivateIPs *bool `json:"blockPrivateIPs,omitempty"`
 }
 
 // NetworkPolicySpec defines the desired state of NetworkPolicy.
 type NetworkPolicySpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// TargetNetwork represents the network where the network policy is effective. If the list is empty, please confirm whether a NAD has been created in the current project.
+	// TargetNetwork specifies the target NAD resource where this NetworkPolicy takes effect. If the selection dropdown is empty, no NADs are available in the current project, preventing the policy from taking effect. Please ensure at least one valid NAD is created before proceeding.
+	//
 	// +kubebuilder:validation:MinLength=1
 	TargetNetwork string `json:"targetNetwork"`
 
-	// MatchLabels defines which pods this network policy shall apply to.
+	// MatchLabels defines a collection of label key-value pairs used to select the Pods to which this NetworkPolicy applies.
+	//
 	// +kubebuilder:validation:Optional
 	// +listType=map
 	// +listMapKey=label
 	// +listMapKey=value
 	MatchLabels []MatchLabel `json:"matchLabels,omitempty"`
 
-	// MatchExpressions defines which pods this network policy shall apply to.
+	// MatchExpressions defines a collection of advanced label expressions used to select the Pods to which this NetworkPolicy applies.
+	//
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:MaxItems=30
 	// +kubebuilder:validation:XValidation:rule="self.all(i, self.filter(j, i.key == j.key && i.operator == j.operator && j.values.exists(v, v in i.values)).size() == 1)",message="spec.matchExpressions in body should not contain overlapping values for the same key and operator"
 	MatchExpressions []LabelSelectorRequirement `json:"matchExpressions,omitempty"`
 
-	// Egress defines the outbound network traffic rules for the selected pods.
+	// Egress defines the outbound network traffic allowance rules for the selected Pods.
+	//
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=30
 	// +kubebuilder:validation:XValidation:rule="self.all(i, self.filter(j, j.toFQDNs.exists(f, f in i.toFQDNs) && j.ports.exists(p, p in i.ports)).size() == 1)",message="spec.egress in body should not contain overlapping toFQDNs and ports across different rules"
 	Egress []EgressRule `json:"egress"`
 
-	// EnabledNetworkType defines which type of IP addresses to allow.
+	// EnabledNetworkType determines the IP address families used for DNS resolution and subsequent traffic allowance.
 	//
-	//  - Options are one of: 'all', 'ipv4', 'ipv6'
-	//  - Defaults to 'ipv4' if not specified
+	// Configuration:
+	//	▸ Default: ipv4
 	//
 	// +kubebuilder:default:=ipv4
 	EnabledNetworkType NetworkType `json:"enabledNetworkType,omitempty"`
 
-	// The timeout to use for lookups of the FQDNs.
+	// ResolutionTimeoutSeconds defines the maximum timeout duration for a single FQDN during DNS queries.
 	//
-	//  - Defaults to 3 seconds if not specified
-	//  - Maximum value is 60 seconds
-	//  - Minimum value is 1 second
-	//  - Must be less than TTLSeconds
+	// Configuration:
+	//	▸ Default: 3s
+	//	▸ Range: 1s to 60s
+	//	▸ Constraint: Must be strictly less than TTLSeconds
 	//
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=60
 	// +kubebuilder:default:=3
-	ResolveTimeoutSeconds int32 `json:"resolveTimeoutSeconds,omitempty"`
+	ResolutionTimeoutSeconds int32 `json:"resolutionTimeoutSeconds,omitempty"`
 
-	// How long the resolving of an individual FQDN should be retried in case of errors before being removed from the underlying network policy. This ensures intermittent failures in name resolution do not clear existing addresses causing unwanted service disruption.
+	// RetryTimeoutSeconds defines the tolerance duration when FQDN resolution errors occur. Within this time window, previously successfully resolved IP addresses will be retained in the underlying network policy to prevent intermittent DNS failures from disrupting business traffic.
 	//
-	//  - Defaults to 3600 (1 hour) if not specified (nil)
-	//  - Maximum value is 86400 (24 hours)
+	// Configuration:
+	//	▸ Default: 3600s (1 hour)
+	//	▸ Range: 1s to 86400s (24 hours)
 	//
 	// +kubebuilder:validation:Maximum=86400
 	// +kubebuilder:default:=3600
 	RetryTimeoutSeconds int32 `json:"retryTimeoutSeconds,omitempty"`
 
-	// The interval at which the IP addresses of the FQDNs are re-evaluated.
+	// TTLSeconds defines the polling interval to re-evaluate and resolve all FQDN addresses.
 	//
-	//  - Defaults to 60 seconds if not specified
-	//  - Maximum value is 1800 seconds
-	//  - Minimum value is 5 seconds
-	//  - Must be greater than ResolveTimeoutSeconds
+	// Configuration:
+	//	▸ Default: 60s
+	//	▸ Range: 5s to 1800s
+	//	▸ Constraint: Must be strictly greater than ResolutionTimeoutSeconds
 	//
 	// +kubebuilder:validation:Minimum=5
 	// +kubebuilder:validation:Maximum=1800
 	// +kubebuilder:default:=60
 	TTLSeconds int32 `json:"ttlSeconds,omitempty"`
 
-	// When set to true, all private IPs are omitted from the rules unless otherwise specified at the EgressRule level.
+	// BlockPrivateIPs controls whether to automatically intercept and drop all private IP address ranges from the DNS resolution results. When enabled (true), private IPs are blocked unless explicitly overridden and allowed at a specific EgressRule level.
 	//
-	//  - Defaults to false if not specified
+	// Configuration:
+	//	▸ Default: false
 	BlockPrivateIPs bool `json:"blockPrivateIPs,omitempty"`
 }
 
 type NetworkPolicyConditionType string
 
 const (
-	NetworkPolicyReadyCondition    NetworkPolicyConditionType = "Ready"
-	NetworkPolicyResolvedCondition NetworkPolicyConditionType = "Resolved"
+	NetworkPolicyReady    NetworkPolicyConditionType = "Ready"
+	NetworkPolicyResolved NetworkPolicyConditionType = "Resolved"
 )
 
-type NetworkPolicyReadyConditionReason string
+type NetworkPolicyReadyReason string
 
 const (
-	// 底层的MultiNetworkPolicy创建成功了，egress至少包含一个规则，也即至少有一个FQDN是解析成功的
-	NetworkPolicySuccess    NetworkPolicyReadyConditionReason = "Success"
-	// 底层的MultiNetworkPolicy创建成功，但egress没有包含任何规则，一般是因为没有任何一个FQDN解析成功
-	NetworkPolicyEmptyRules NetworkPolicyReadyConditionReason = "EmptyRules"
-	// 底层的MultiNetworkPolicy创建失败
-	NetworkPolicyFailure    NetworkPolicyReadyConditionReason = "Failure"
+	// 网络策略下发成功，策略中至少包含一条规则（以IP地址块为放行目标），也即至少有一个FQDN是解析成功的
+	NetworkPolicyReadySuccess NetworkPolicyReadyReason = "Success"
+	// 网络策略下发成功，但策略中不含任何规则，一般认为是没有任何一个FQDN解析成功所导致
+	NetworkPolicyReadyEmptyRules NetworkPolicyReadyReason = "EmptyRules"
+	// 网络策略下发失败，原因有很多，比如MultiNetworkPolicy CRD不存在等
+	NetworkPolicyReadyFailure NetworkPolicyReadyReason = "Failure"
 )
 
-type NetworkPolicyResolvedConditionReason string
+type NetworkPolicyResolutionReason string
 
 const (
-	// 所有FQDN都解析成功（下面单个FQDN的解析成功也使用这个状态）
-	NetworkPolicyResolvedSuccess        NetworkPolicyResolvedConditionReason = "Success"
-	// 部分FQDN解析成功（下面单个FQDN的解析失败不会直接使用这个状态）
-	NetworkPolicyResolvedPartialSuccess NetworkPolicyResolvedConditionReason = "PartialSuccess"
-	// 所有FQDN都解析失败（下面单个FQDN的解析失败不会直接使用这个状态，而是会细化出各种失败的状态）
-	NetworkPolicyResolvedFailure        NetworkPolicyResolvedConditionReason = "Failure"
+	// 所有FQDN都解析成功（下面单个FQDN的解析成功也会使用这个状态）
+	NetworkPolicyResolutionSuccess NetworkPolicyResolutionReason = "Success"
+	// 部分FQDN解析成功（下面单个FQDN的解析不会使用到这个状态）
+	NetworkPolicyResolutionPartialSuccess NetworkPolicyResolutionReason = "PartialSuccess"
+	// 所有FQDN都解析失败（下面单个FQDN的解析失败不会直接使用到这个状态，而是会使用下面各种细化出来的状态）
+	NetworkPolicyResolutionFailure NetworkPolicyResolutionReason = "Failure"
 
-	// 针对单个FQDN解析的状态记录
-	// 解析出错了，瞬时，Error其实可以包含很多错误状态
-	NetworkPolicyResolvedError          NetworkPolicyResolvedConditionReason = "Error"
-	// FQDN不存在，包含两种情况：域名不存在；域名存在但主机记录不存在。获得的错误描述都是no such host
-	NetworkPolicyResolvedHostNotFound   NetworkPolicyResolvedConditionReason = "HostNotFound"
-	// FQDN格式错误，在进入真正解析时通过格式检查，有可能抛出这个错误。但实际上由于前端有严格的CEL匹配检查，程序中永远不会出现这个错误
-	NetworkPolicyResolvedInvalidFormat  NetworkPolicyResolvedConditionReason = "InvalidFormat"
+	// 针对单个FQDN解析的状态
+	// 解析出错了，Error其实可以包含很多错误状态，瞬时
+	NetworkPolicyResolutionError NetworkPolicyResolutionReason = "Error"
+	// FQDN不存在，包含两种情况：域名不存在、域名存在但主机记录不存在，这两种情况的错误信息都是no such host
+	NetworkPolicyResolutionHostNotFound NetworkPolicyResolutionReason = "HostNotFound"
+	// FQDN格式错误，在进入真正解析时通过格式检查，有可能抛出这个错误。但实际上由于前端已有严格的格式检查，程序中永远不会出现这个错误
+	NetworkPolicyResolutionInvalidFormat NetworkPolicyResolutionReason = "InvalidFormat"
 	// FQDN解析等待延时，瞬时
-	NetworkPolicyResolvedTimeout        NetworkPolicyResolvedConditionReason = "Timeout"
+	NetworkPolicyResolutionTimeout NetworkPolicyResolutionReason = "Timeout"
 	// FQDN解析中遭遇临时错误，瞬时
-	NetworkPolicyResolvedTemporaryError NetworkPolicyResolvedConditionReason = "TemporaryError"
+	NetworkPolicyResolutionTemporaryError NetworkPolicyResolutionReason = "TemporaryError"
 )
 
-func (r NetworkPolicyResolvedConditionReason) Priority() int {
+func (r NetworkPolicyResolutionReason) Priority() int {
 	switch r {
-	case NetworkPolicyResolvedFailure:
+	case NetworkPolicyResolutionFailure:
 		return 100
-	case NetworkPolicyResolvedPartialSuccess:
+	case NetworkPolicyResolutionPartialSuccess:
 		return 90
 
-	case NetworkPolicyResolvedError:
+	case NetworkPolicyResolutionError:
 		return 10
-	case NetworkPolicyResolvedHostNotFound:
+	case NetworkPolicyResolutionHostNotFound:
 		return 8
-	case NetworkPolicyResolvedInvalidFormat:
+	case NetworkPolicyResolutionInvalidFormat:
 		return 6
-	case NetworkPolicyResolvedTimeout:
+	case NetworkPolicyResolutionTimeout:
 		return 4
-	case NetworkPolicyResolvedTemporaryError:
+	case NetworkPolicyResolutionTemporaryError:
 		return 2
 	default:
 		return 0
 	}
 }
 
-func (r NetworkPolicyResolvedConditionReason) Transient() bool {
+func (r NetworkPolicyResolutionReason) Transient() bool {
 	switch r {
 	// 解析延时、解析时临时错误、解析时错误都被当成瞬时情况处理，因为这些情况随着时间的推移，是有可能消失的
-	case NetworkPolicyResolvedTimeout, NetworkPolicyResolvedTemporaryError, NetworkPolicyResolvedError:
+	case NetworkPolicyResolutionTimeout, NetworkPolicyResolutionTemporaryError, NetworkPolicyResolutionError:
 		return true
 	default:
 		return false
 	}
 }
 
-// FQDNStatus defines the status of a given FQDN
+// FQDNStatus defines the resolution status of a specific FQDN.
 type FQDNStatus struct {
-	// FQDN is the FQDN this status refers to
+	// FQDN specifies the exact fully qualified domain name that this resolution status tracks.
 	FQDN FQDN `json:"fqdn"`
-	// LastSuccessfulTime is the last time the FQDN was resolved successfully. I.e. the last time the ResolvedReason was NetworkPolicyResolvedSuccess
-	LastSuccessfulTime metav1.Time `json:"lastSuccessfulTime,omitempty"`
-	// LastTransitionTime is the last time the reason changed
+	// FailingSince records the exact time the FQDN first started failing to resolve.
+	// It is nil when the FQDN is resolved successfully.
+	// This timestamp is used to calculate whether a continuous transient failure has exceeded the tolerance defined by NetworkPolicySpec.RetryTimeoutSeconds.
+	FailingSince *metav1.Time `json:"failingSince,omitempty"`
+	// LastTransitionTime is the last time the resolution reason transitioned from one state to another.
 	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
-	// ResolvedReason describes the last resolved status
-	ResolvedReason NetworkPolicyResolvedConditionReason `json:"resolvedReason,omitempty"`
-	// ResolvedMessage is a message describing the reason for the status
-	ResolvedMessage string `json:"resolvedMessage,omitempty"`
-	// Addresses is the list of resolved addresses for the given FQDN. The list is cleared if LastSuccessfulTime exceeds the time limit specified by NetworkPolicySpec.RetryTimeoutSeconds
+	// Reason describes the specific condition or error encountered during the last resolution attempt.
+	Reason NetworkPolicyResolutionReason `json:"reason,omitempty"`
+	// Message is a human-readable description detailing the reason for the current status.
+	Message string `json:"message,omitempty"`
+	// Addresses is the list of resolved IP addresses for the given FQDN.
+	// This list is cleared immediately upon a non-transient error, or if a transient error persists longer than the limit specified by NetworkPolicySpec.RetryTimeoutSeconds.
 	Addresses []string `json:"addresses,omitempty"`
 }
 
 // NetworkPolicyStatus defines the observed state of NetworkPolicy.
 type NetworkPolicyStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// LatestLookupTime is the last time the IPs were resolved
-	LatestLookupTime metav1.Time `json:"latestLookupTime,omitempty"`
-
-	// FQDNs lists the status of each FQDN in the network policy
+	// FQDNs contains the detailed resolution status for each FQDN defined in the egress rules.
 	FQDNs []FQDNStatus `json:"fqdns,omitempty"`
-
-	// AppliedAddressCount counts the number of unique IPs applied in the generated network policy
+	// AppliedAddressCount is the number of unique IP addresses successfully applied to the underlying network policy.
 	AppliedAddressCount int32 `json:"appliedAddressCount,omitempty"`
-
-	// TotalAddressCount is the number of total IPs resolved from the FQDNs before filtering
+	// TotalAddressCount is the total number of IP addresses resolved from all FQDNs before filtering and deduplication.
 	TotalAddressCount int32 `json:"totalAddressCount,omitempty"`
-
-	Conditions         []metav1.Condition `json:"conditions"`
-	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
+	// Conditions represents the latest available observations of the NetworkPolicy's current state.
+	Conditions []metav1.Condition `json:"conditions"`
+	// ObservedGeneration represents the most recent generation observed by the controller.
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -312,15 +336,14 @@ type NetworkPolicyStatus struct {
 
 // NetworkPolicy is the Schema for the networkpolicies API.
 //
-//   - Please ensure the pods you apply this network policy to have a separate policy allowing access to CoreDNS / KubeDNS pods in your cluster. Without this, once this Network policy is applied, access to DNS will be blocked due to how network policies deny all unspecified traffic by default once applied.
-//   - If no addresses are resolved from the FQDNs from the Egress rules that were specified, the default behavior is to block all Egress traffic. This conforms with the default behavior of network policies (networking.k8s.io/v1).
+//   - Ensure that the target Pods selected by this NetworkPolicy have an independent policy allowing outbound traffic to their configured DNS servers. Once this NetworkPolicy takes effect, its implicit default-deny behavior for unspecified traffic will block DNS queries, disrupting workload connectivity.
+//   - If no valid IP addresses can be resolved from the FQDNs defined in the Egress rules, this NetworkPolicy will default to blocking all outbound traffic. This strictly conforms with the default security posture of the native Kubernetes NetworkPolicy (networking.k8s.io/v1).
 //
-// +kubebuilder:resource:path=networkpolicies,singular=networkpolicy,scope=Namespaced,shortName={fenp,fnp}
+// +kubebuilder:resource:path=networkpolicies,singular=networkpolicy,scope=Namespaced,shortName={fe,fnp}
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`,description="Ready condition status"
 // +kubebuilder:printcolumn:name="Resolved",type=string,JSONPath=`.status.conditions[?(@.type=="Resolved")].status`,description="Resolved condition status"
-// +kubebuilder:printcolumn:name="Resolved IPs",type=integer,JSONPath=`.status.totalAddressCount`,description="Number of resolved IPs before filtering"
+// +kubebuilder:printcolumn:name="Resolved IPs",type=integer,JSONPath=`.status.totalAddressCount`,description="Number of resolved IPs"
 // +kubebuilder:printcolumn:name="Applied IPs",type=integer,JSONPath=`.status.appliedAddressCount`,description="Number of applied IPs"
-// +kubebuilder:printcolumn:name="Last Lookup",type=date,JSONPath=`.status.latestLookupTime`,description="Time of last FQDN resolved"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type NetworkPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
