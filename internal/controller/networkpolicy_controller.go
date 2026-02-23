@@ -93,17 +93,17 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	mnp := np.ToMultiNetworkPolicy(np.Status.FQDNs)
 
 	np.Status.TotalAddressCount = int32(len(results.CIDRs()))
-	utils.RemoveDuplicateCIDRsInNetworkPolicy(mnp)
+	utils.RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp)
 	np.Status.AppliedAddressCount = int32(utils.CountUniqueAddresses(mnp))
 
-	resolvedStatus := results.AggregatedResolutionStatus()
+	resolutionStatus := results.AggregatedResolutionStatus()
 	np.SetResolvedCondition(
-		resolvedStatus,
+		resolutionStatus,
 		results.AggregatedResolutionMessage(),
 	)
 
 	logger := logf.FromContext(ctx).WithValues(
-		"status", resolvedStatus,
+		"status", resolutionStatus,
 		"resolved", np.Status.TotalAddressCount,
 		"applied", np.Status.AppliedAddressCount,
 	)

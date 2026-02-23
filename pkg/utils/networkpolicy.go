@@ -8,16 +8,16 @@ import (
 )
 
 // Remove duplicate CIDRs in MultiNetworkPolicy
-func RemoveDuplicateCIDRsInNetworkPolicy(multiNetworkPolicy *mnetv1beta1.MultiNetworkPolicy) {
-	if multiNetworkPolicy == nil || len(multiNetworkPolicy.Spec.Egress) == 0 {
+func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolicy) {
+	if mnp == nil || len(mnp.Spec.Egress) == 0 {
 		return
 	}
 
 	// 阶段0：容量预估
 	// 未去重之前的IP地址总数
 	totalPeers := 0
-	for i := range multiNetworkPolicy.Spec.Egress {
-		totalPeers += len(multiNetworkPolicy.Spec.Egress[i].To)
+	for i := range mnp.Spec.Egress {
+		totalPeers += len(mnp.Spec.Egress[i].To)
 	}
 
 	// 阶段1：原子化打散
@@ -30,8 +30,8 @@ func RemoveDuplicateCIDRsInNetworkPolicy(multiNetworkPolicy *mnetv1beta1.MultiNe
 
 	cidrToPortsMap := make(map[string]*portSet, totalPeers)
 
-	for i := range multiNetworkPolicy.Spec.Egress {
-		rule := &multiNetworkPolicy.Spec.Egress[i]
+	for i := range mnp.Spec.Egress {
+		rule := &mnp.Spec.Egress[i]
 		for j := range rule.To {
 			peer := &rule.To[j]
 			if peer.IPBlock == nil || peer.IPBlock.CIDR == "" {
@@ -168,7 +168,7 @@ func RemoveDuplicateCIDRsInNetworkPolicy(multiNetworkPolicy *mnetv1beta1.MultiNe
 		})
 	}
 
-	multiNetworkPolicy.Spec.Egress = newEgressRules
+	mnp.Spec.Egress = newEgressRules
 }
 
 func getSinglePortKey(p mnetv1beta1.MultiNetworkPolicyPort) string {
@@ -197,22 +197,22 @@ func getPortsFingerprint(ports []mnetv1beta1.MultiNetworkPolicyPort) string {
 	return strings.Join(tmp, ",")
 }
 
-func CountUniqueAddresses(multiNetworkPolicy *mnetv1beta1.MultiNetworkPolicy) int {
-	if multiNetworkPolicy == nil {
+func CountUniqueAddresses(mnp *mnetv1beta1.MultiNetworkPolicy) int {
+	if mnp == nil {
 		return 0
 	}
 
 	var count int
-	for i := range multiNetworkPolicy.Spec.Egress {
-		count += len(multiNetworkPolicy.Spec.Egress[i].To)
+	for i := range mnp.Spec.Egress {
+		count += len(mnp.Spec.Egress[i].To)
 	}
 
 	return count
 }
 
-func IsEmpty(multiNetworkPolicy *mnetv1beta1.MultiNetworkPolicy) bool {
-	if multiNetworkPolicy == nil {
+func IsEmpty(mnp *mnetv1beta1.MultiNetworkPolicy) bool {
+	if mnp == nil {
 		return true
 	}	
-	return len(multiNetworkPolicy.Spec.Ingress) == 0 && len(multiNetworkPolicy.Spec.Egress) == 0
+	return len(mnp.Spec.Ingress) == 0 && len(mnp.Spec.Egress) == 0
 }
