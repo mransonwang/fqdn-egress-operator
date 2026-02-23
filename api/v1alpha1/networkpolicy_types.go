@@ -134,12 +134,12 @@ type EgressRule struct {
 	ToFQDNs []FQDN `json:"toFQDNs"`
 	// Ports specifies the list of network ports allowed for outbound traffic access.
 	//
-	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:MaxItems=10
 	// +listType=map
 	// +listMapKey=protocol
 	// +listMapKey=port
-	Ports []MultiNetworkPolicyPort `json:"ports"`
+	Ports []MultiNetworkPolicyPort `json:"ports,omitempty"`
 	// BlockPrivateIPs overrides the default configuration of the same name at the NetworkPolicySpec level for the current rule.
 	//
 	// Configuration:

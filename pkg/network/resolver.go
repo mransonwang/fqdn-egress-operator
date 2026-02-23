@@ -22,26 +22,20 @@ func (e lookupError) Error() string {
 	return e.Message
 }
 
-// DNSResolverResult is the resulting outcome of a Resolver's DNS lookup
 type DNSResolverResult struct {
-	// FQDN that the lookup was for
 	FQDN v1alpha1.FQDN
-	// Error that the lookup may have caused
 	Error error
-	// Resolved status
 	Status v1alpha1.NetworkPolicyResolutionReason
-	// Message for the reason
 	Message string
-	// CIDRs found for the given FQDN if no error occurred
 	CIDRs []*v1alpha1.CIDR
 }
 
 func NewDNSResolverResult(
 	fqdn v1alpha1.FQDN,
 	cidrs []*v1alpha1.CIDR,
-	error error) *DNSResolverResult {
+	err error) *DNSResolverResult {
 	sort.SliceStable(cidrs, func(i, j int) bool {
-		cmp := bytes.Compare(cidrs[i].IP, cidrs[j].IP)
+		cmp := bytes.Compare(cidrs[i].IP.To16(), cidrs[j].IP.To16())
 		if cmp == 0 {
 			return cidrs[i].Prefix < cidrs[j].Prefix
 		}
@@ -50,15 +44,14 @@ func NewDNSResolverResult(
 
 	return &DNSResolverResult{
 		FQDN:    fqdn,
-		Error:   error,
-		Message: resolvedMessage(error),
-		Status:  resolvedReason(error),
+		Error:   err,
+		Status:  resolutionReason(err),
+		Message: resolutionMessage(err),
 		CIDRs:   cidrs,
 	}
 }
 
-// resolvedReason returns the reason for the status of the resolved result
-func resolvedReason(err error) v1alpha1.NetworkPolicyResolutionReason {
+func resolutionReason(err error) v1alpha1.NetworkPolicyResolutionReason {
 	if err == nil {
 		return v1alpha1.NetworkPolicyResolutionSuccess
 	}
@@ -88,8 +81,7 @@ func resolvedReason(err error) v1alpha1.NetworkPolicyResolutionReason {
 	return v1alpha1.NetworkPolicyResolutionError
 }
 
-// resolvedMessage returns an error message for the given error
-func resolvedMessage(err error) string {
+func resolutionMessage(err error) string {
 	if err == nil {
 		return "Resolved successfully"
 	}
@@ -119,10 +111,8 @@ func resolvedMessage(err error) string {
 	return err.Error()
 }
 
-// DNSResolverResultList is a wrapper around DNSResolver result with helpful getter methods
 type DNSResolverResultList []*DNSResolverResult
 
-// CIDRs returns all the CIDRs in the result list
 func (dlr DNSResolverResultList) CIDRs() []*v1alpha1.CIDR {
 	total := 0
 	for i := range dlr {
@@ -139,8 +129,7 @@ func (dlr DNSResolverResultList) CIDRs() []*v1alpha1.CIDR {
 	return cidrs
 }
 
-// AggregatedResolvedStatus returns the reason with the highest priority in the result list
-func (dlr DNSResolverResultList) AggregatedResolvedStatus() v1alpha1.NetworkPolicyResolutionReason {
+func (dlr DNSResolverResultList) AggregatedResolutionStatus() v1alpha1.NetworkPolicyResolutionReason {
 	total := len(dlr)
 	if total == 0 {
 		return v1alpha1.NetworkPolicyResolutionSuccess
@@ -162,8 +151,7 @@ func (dlr DNSResolverResultList) AggregatedResolvedStatus() v1alpha1.NetworkPoli
 	return v1alpha1.NetworkPolicyResolutionPartialSuccess
 }
 
-// AggregatedResolvedMessage returns the message with the highest priority in the result list
-func (dlr DNSResolverResultList) AggregatedResolvedMessage() string {
+func (dlr DNSResolverResultList) AggregatedResolutionMessage() string {
 	total := len(dlr)
 	// egress: []
 	if total == 0 {
@@ -192,8 +180,14 @@ func (dlr DNSResolverResultList) AggregatedResolvedMessage() string {
 
 	sampleMessage := "Unknown error"
 	if resultWithWorstError != nil {
-		// 需要将原生的信息显示出来，以利于排查
-		sampleMessage = fmt.Sprintf("%s: %s", resolvedMessage(resultWithWorstError.Error), resultWithWorstError.Error.Error())
+		resMsg := resolutionMessage(resultWithWorstError.Error)
+		// 需要将原生的信息显示出来，利于排查
+		rawErr := resultWithWorstError.Error.Error()
+		if resMsg == rawErr {
+			sampleMessage = resMsg
+		} else {
+			sampleMessage = fmt.Sprintf("%s: %s", resMsg, rawErr)
+		}		
 	}
 
 	if successCount == 0 {
@@ -203,7 +197,6 @@ func (dlr DNSResolverResultList) AggregatedResolvedMessage() string {
 	return fmt.Sprintf("Partially resolved (%d/%d FQDNs). %s.", successCount, total, sampleMessage)
 }
 
-// LookupTable returns a FQDN lookup table for the result list
 func (dlr DNSResolverResultList) LookupTable() map[v1alpha1.FQDN]*DNSResolverResult {
 	lookup := make(map[v1alpha1.FQDN]*DNSResolverResult, len(dlr))
 	for i := range dlr {
@@ -216,12 +209,10 @@ type Resolver interface {
 	LookupIP(ctx context.Context, network string, host string) ([]net.IP, error)
 }
 
-// DNSResolver resolves FQDNs to IPs
 type DNSResolver struct {
 	resolver Resolver
 }
 
-// NewDNSResolver returns the default resolver to use for DNS lookup
 func NewDNSResolver() *DNSResolver {
 	return &DNSResolver{
 		resolver: &net.Resolver{
@@ -230,7 +221,6 @@ func NewDNSResolver() *DNSResolver {
 	}
 }
 
-// lookupIP resolves the host to its underlying IP addresses
 func (r *DNSResolver) lookupIP(
 	ctx context.Context,
 	networkType v1alpha1.NetworkType,
@@ -257,8 +247,6 @@ func (r *DNSResolver) lookupIP(
 	return cidrs, nil
 }
 
-// Resolve all the given fqdns to a DNSResolverResult
-//   - maxConcurrent controls how many goroutines are spawned to resolve addresses from FQDNs
 func (r *DNSResolver) Resolve(
 	ctx context.Context,
 	timeout time.Duration,
@@ -282,10 +270,8 @@ func (r *DNSResolver) Resolve(
 
 			select {
 			case sem <- struct{}{}:
-				// acquired a slot
 				defer func() { <-sem }()
 			case <-ctx.Done():
-				// parent context cancelled before acquiring slot
 				results <- NewDNSResolverResult(rFQDN, nil, &lookupError{
 					Reason:  v1alpha1.NetworkPolicyResolutionError,
 					Message: "Context canceled before resolution could start",

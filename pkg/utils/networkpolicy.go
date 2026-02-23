@@ -8,61 +8,58 @@ import (
 )
 
 // Remove duplicate CIDRs in MultiNetworkPolicy
-func RemoveDuplicateCidrsInNetworkPolicy(networkPolicy *mnetv1beta1.MultiNetworkPolicy) {
-	if networkPolicy == nil || len(networkPolicy.Spec.Egress) == 0 {
+func RemoveDuplicateCIDRsInNetworkPolicy(multiNetworkPolicy *mnetv1beta1.MultiNetworkPolicy) {
+	if multiNetworkPolicy == nil || len(multiNetworkPolicy.Spec.Egress) == 0 {
 		return
 	}
 
 	// 阶段0：容量预估
 	// 未去重之前的IP地址总数
 	totalPeers := 0
-	for i := range networkPolicy.Spec.Egress {
-		totalPeers += len(networkPolicy.Spec.Egress[i].To)
+	for i := range multiNetworkPolicy.Spec.Egress {
+		totalPeers += len(multiNetworkPolicy.Spec.Egress[i].To)
 	}
 
 	// 阶段1：原子化打散
-	// 这里之所以还放一个MultiNetworkPolicyPort的结构体作为嵌套Map的值存在，是为了后面生成Egress规则时可以直接拿来使用
-	// cidrToPortsMap填充后的表达类似如下
-	// cidrToPortsMap[8.8.8.8/32][TCP:80] = {Protocol: TCP, Port: 80}
-	// cidrToPortsMap[8.8.8.8/32][TCP:443] = {Protocol: TCP, Port: 443}
-	// cidrToPortsMap是一个嵌套的Map，第一层键和第二层键的名称都是唯一的，从而达到了IP地址去重以及IP地址对应的端口去重的目的
-	// totalPeers这里是为第一个键初始化容量
-	cidrToPortsMap := make(map[string]map[string]mnetv1beta1.MultiNetworkPolicyPort, totalPeers)
 
-	for i := range networkPolicy.Spec.Egress {
-		rule := &networkPolicy.Spec.Egress[i]
+	// 引入全端口豁免逻辑
+	type portSet struct {
+		allowAll bool // 核心标记：标识该IP是否拥有全端口放行特权
+		ports    map[string]mnetv1beta1.MultiNetworkPolicyPort
+	}
+
+	cidrToPortsMap := make(map[string]*portSet, totalPeers)
+
+	for i := range multiNetworkPolicy.Spec.Egress {
+		rule := &multiNetworkPolicy.Spec.Egress[i]
 		for j := range rule.To {
 			peer := &rule.To[j]
 			if peer.IPBlock == nil || peer.IPBlock.CIDR == "" {
 				continue
 			}
 			cidr := peer.IPBlock.CIDR
-			// 拿到了一个cidr，判断诸如cidrToPortsMap[cidr]是否存在
-			if _, ok := cidrToPortsMap[cidr]; !ok {
-				// 如果不存在，则添加第一层键，并初始化第二层的容量
-				// 这里的容量是估出来的，因为一般IP地址开放的端口无非就是以下一些（只是举例说明）：
-				// {Protocol: TCP, Port: 80}
-				// {Protocol: TCP, Port: 443}
-				// {Protocol: UDP, Port: 53}
-				// {Protocol: TCP, Port: 8080}
-				// {Protocol: TCP, Port: 22}
-				// {Protocol: TCP, Port: 8181}
-				// 所以总共可能的数量在10个以内（不需要计算这些情况的组合），不会太多，这里硬编码用16满足绝大部分场景的需求，或者更浪费一点用32也行
-				cidrToPortsMap[cidr] = make(map[string]mnetv1beta1.MultiNetworkPolicyPort, 16)
+
+			ps, ok := cidrToPortsMap[cidr]
+			if !ok {
+				ps = &portSet{ports: make(map[string]mnetv1beta1.MultiNetworkPolicyPort, 16)}
+				cidrToPortsMap[cidr] = ps
 			}
 
-			// 把IP地址所对应的端口数组也进行遍历
-			// 比如端口数组包含了
-			// {Protocol: TCP, Port: 80}
-			// {Protocol: TCP, Port: 443}
-			// {Protocol: UDP, Port: 53}
-			// 就要遍历3次
+			if ps.allowAll {
+				continue
+			}			
+
+			if len(rule.Ports) == 0 {
+				ps.allowAll = true
+				ps.ports = nil
+				continue
+			}
+
 			for k := range rule.Ports {
 				p := rule.Ports[k]
 				// 把{Protocol: TCP, Port: 80}转换成诸如TCP:80这样的字符串
 				pKey := getSinglePortKey(p)
-				// 最终作为cidrToPartsMap[8.8.8.8/32][TCP:80] = {Protocol: TCP, Port: 80}这种形式在内存保存起来
-				cidrToPortsMap[cidr][pKey] = p
+				ps.ports[pKey] = p
 			}
 		}
 	}
@@ -92,19 +89,18 @@ func RemoveDuplicateCidrsInNetworkPolicy(networkPolicy *mnetv1beta1.MultiNetwork
 	// portsMap就相当于[TCP:80] = {Protocol: TCP, Port: 80}, [TCP:443] = {Protocol: TCP, Port: 443}
 	// cidrToPortsMap[8.8.8.8/32][TCP:80] = {Protocol: TCP, Port: 80}
 	// cidrToPortsMap[8.8.8.8/32][TCP:443] = {Protocol: TCP, Port: 443}
-	for cidr, portsMap := range cidrToPortsMap {
-		// 根据portsMap的大小分配portSlice容量
-		portSlice := make([]mnetv1beta1.MultiNetworkPolicyPort, 0, len(portsMap))
-		for _, p := range portsMap {
-			// portSlice的最终形态类似[{Protocol: TCP, Port: 80}, {Protocol: TCP, Port: 443}]
-			portSlice = append(portSlice, p)
-		}
-
-		// 由于portsMap是一个Map，遍历顺序是随机的，放入portSlice的端口顺序也是随机的
-		// 必须在这里对portSlice进行排序，否则底层更新时DeepEqual会因为数组乱序判定为不一致！
-		sort.Slice(portSlice, func(i, j int) bool {
-			return getSinglePortKey(portSlice[i]) < getSinglePortKey(portSlice[j])
-		})		
+	for cidr, ps := range cidrToPortsMap {
+		var portSlice []mnetv1beta1.MultiNetworkPolicyPort		
+		if !ps.allowAll && len(ps.ports) > 0 {
+			portSlice = make([]mnetv1beta1.MultiNetworkPolicyPort, 0, len(ps.ports))
+			for _, p := range ps.ports {
+				portSlice = append(portSlice, p)
+			}
+			// 确定性排序，防止 DeepEqual 乱序误判
+			sort.Slice(portSlice, func(i, j int) bool {
+				return getSinglePortKey(portSlice[i]) < getSinglePortKey(portSlice[j])
+			})
+		}	
 		
 		// 生成指纹，从[{Protocol: TCP, Port: 80}, {Protocol: TCP, Port: 443}]生成TCP:80,TCP:443
 		f := getPortsFingerprint(portSlice)
@@ -172,7 +168,7 @@ func RemoveDuplicateCidrsInNetworkPolicy(networkPolicy *mnetv1beta1.MultiNetwork
 		})
 	}
 
-	networkPolicy.Spec.Egress = newEgressRules
+	multiNetworkPolicy.Spec.Egress = newEgressRules
 }
 
 func getSinglePortKey(p mnetv1beta1.MultiNetworkPolicyPort) string {
@@ -201,22 +197,22 @@ func getPortsFingerprint(ports []mnetv1beta1.MultiNetworkPolicyPort) string {
 	return strings.Join(tmp, ",")
 }
 
-func CountDeDupedAddresses(networkPolicy *mnetv1beta1.MultiNetworkPolicy) int {
-	if networkPolicy == nil {
+func CountUniqueAddresses(multiNetworkPolicy *mnetv1beta1.MultiNetworkPolicy) int {
+	if multiNetworkPolicy == nil {
 		return 0
 	}
 
 	var count int
-	for i := range networkPolicy.Spec.Egress {
-		count += len(networkPolicy.Spec.Egress[i].To)
+	for i := range multiNetworkPolicy.Spec.Egress {
+		count += len(multiNetworkPolicy.Spec.Egress[i].To)
 	}
 
 	return count
 }
 
-func IsEmpty(networkPolicy *mnetv1beta1.MultiNetworkPolicy) bool {
-	if networkPolicy == nil {
+func IsEmpty(multiNetworkPolicy *mnetv1beta1.MultiNetworkPolicy) bool {
+	if multiNetworkPolicy == nil {
 		return true
 	}	
-	return len(networkPolicy.Spec.Ingress) == 0 && len(networkPolicy.Spec.Egress) == 0
+	return len(multiNetworkPolicy.Spec.Ingress) == 0 && len(multiNetworkPolicy.Spec.Egress) == 0
 }

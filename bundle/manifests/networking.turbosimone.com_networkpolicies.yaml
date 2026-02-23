@@ -123,7 +123,6 @@ spec:
                         - protocol
                         type: object
                       maxItems: 10
-                      minItems: 1
                       type: array
                       x-kubernetes-list-map-keys:
                       - protocol
@@ -146,7 +145,6 @@ spec:
                       type: array
                       x-kubernetes-list-type: set
                   required:
-                  - ports
                   - toFQDNs
                   type: object
                 maxItems: 30

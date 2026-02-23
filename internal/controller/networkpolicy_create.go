@@ -13,9 +13,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-// reconcileNetworkPolicyCreation Creates the underlying network policy
 func (r *NetworkPolicyReconciler) reconcileNetworkPolicyCreation(
-	ctx context.Context, np *v1alpha1.NetworkPolicy, networkPolicy *mnetv1beta1.MultiNetworkPolicy,
+	ctx context.Context, np *v1alpha1.NetworkPolicy, mnp *mnetv1beta1.MultiNetworkPolicy,
 ) error {
 	current := &mnetv1beta1.MultiNetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
@@ -25,21 +24,21 @@ func (r *NetworkPolicyReconciler) reconcileNetworkPolicyCreation(
 	}
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, current, func() error {
 		if current.Labels == nil {
-			current.Labels = make(map[string]string, len(networkPolicy.Labels))
+			current.Labels = make(map[string]string, len(mnp.Labels))
 		}
-		for k, v := range networkPolicy.Labels {
+		for k, v := range mnp.Labels {
 			current.Labels[k] = v
 		}
 
 		if current.Annotations == nil {
-			current.Annotations = make(map[string]string, len(networkPolicy.Annotations))
+			current.Annotations = make(map[string]string, len(mnp.Annotations))
 		}
-		for k, v := range networkPolicy.Annotations {
+		for k, v := range mnp.Annotations {
 			current.Annotations[k] = v
 		}
 
-		if !equality.Semantic.DeepEqual(current.Spec, networkPolicy.Spec) {
-			current.Spec = *networkPolicy.Spec.DeepCopy()
+		if !equality.Semantic.DeepEqual(current.Spec, mnp.Spec) {
+			current.Spec = *mnp.Spec.DeepCopy()
 		}
 		return ctrl.SetControllerReference(np, current, r.Scheme)
 	})
@@ -47,7 +46,7 @@ func (r *NetworkPolicyReconciler) reconcileNetworkPolicyCreation(
 		r.EventRecorder.Event(
 			np,
 			corev1.EventTypeWarning,
-			utils.OperationErrorReason(networkPolicy),
+			utils.OperationErrorReason(mnp),
 			err.Error(),
 		)
 		return err
@@ -56,8 +55,8 @@ func (r *NetworkPolicyReconciler) reconcileNetworkPolicyCreation(
 		r.EventRecorder.Event(
 			np,
 			corev1.EventTypeNormal,
-			utils.OperationReason(networkPolicy, op),
-			utils.OperationMessage(networkPolicy, op))
+			utils.OperationReason(mnp, op),
+			utils.OperationMessage(mnp, op))
 	}
 	return nil
 }

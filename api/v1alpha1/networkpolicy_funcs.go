@@ -9,14 +9,13 @@ import (
 	"time"
 
 	mnetv1beta1 "github.com/k8snetworkplumbingwg/multi-networkpolicy/pkg/apis/k8s.cni.cncf.io/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 var labelRegexp = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
 
-// CIDR represents a network range in CIDR (Classless Inter-Domain Routing) notation.
-// It consists of an IP address and a Prefix (prefix length) that defines the size of the network.
 type CIDR struct {
 	IP     net.IP
 	Prefix int
@@ -42,12 +41,10 @@ func MustCIDR(cidr string) *CIDR {
 	}
 }
 
-// String returns the string representation of the CIDR
 func (c *CIDR) String() string {
 	return fmt.Sprintf("%s/%d", c.IP.String(), c.Prefix)
 }
 
-// IsPrivate returns true if the CIDR is a private address
 func (c *CIDR) IsPrivate() bool {
 	return c.IP.IsPrivate()
 }
@@ -62,7 +59,6 @@ func (l CIDRList) Strings() []string {
 	return result
 }
 
-// Valid returns true if the FQDN is valid
 func (f *FQDN) Valid() bool {
 	labels := strings.Split(string(*f), ".")
 	if len(labels) < 2 {
@@ -93,7 +89,6 @@ func isAllowed(cidrString string, globalBlock bool, ruleBlock *bool) bool {
 
 func sortPeersByCIDR(peers []mnetv1beta1.MultiNetworkPolicyPeer) {
 	sort.SliceStable(peers, func(i, j int) bool {
-		// Make sure both peers have IPBlocks
 		if peers[i].IPBlock == nil {
 			return false
 		}
@@ -122,23 +117,29 @@ func getPeers(fqdns []FQDN, ips map[FQDN]*FQDNStatus, globalBlock bool, ruleBloc
 	return peers
 }
 
-// toNetworkPolicyEgressRule converts the EgressRule to a mnetv1beta1.MultiNetworkPolicyEgressRule.
-// Returns nil if no peers were found.
 func (r *EgressRule) toMultiNetworkPolicyEgressRule(ips map[FQDN]*FQDNStatus, blockPrivate bool) *mnetv1beta1.MultiNetworkPolicyEgressRule {
 	peers := getPeers(r.ToFQDNs, ips, blockPrivate, r.BlockPrivateIPs)
 	if len(peers) == 0 {
 		return nil
 	}
 
-	ports := make([]mnetv1beta1.MultiNetworkPolicyPort, len(r.Ports))
-	for i := range r.Ports {
-		val := intstr.FromInt(int(r.Ports[i].Port))
-		proto := r.Ports[i].Protocol
-		ports[i] = mnetv1beta1.MultiNetworkPolicyPort{
-			Port:     &val,
-			Protocol: &proto,
+	var ports []mnetv1beta1.MultiNetworkPolicyPort
+
+	if len(r.Ports) > 0 {
+		ports = make([]mnetv1beta1.MultiNetworkPolicyPort, len(r.Ports))
+		for i := range r.Ports {
+			valPtr := new(intstr.IntOrString)
+			*valPtr = intstr.FromInt(int(r.Ports[i].Port))
+
+			protoPtr := new(corev1.Protocol)
+			*protoPtr = r.Ports[i].Protocol
+
+			ports[i] = mnetv1beta1.MultiNetworkPolicyPort{
+				Port:     valPtr,
+				Protocol: protoPtr,
+			}
 		}
-	}
+	}	
 
 	return &mnetv1beta1.MultiNetworkPolicyEgressRule{
 		Ports: ports,
@@ -146,7 +147,6 @@ func (r *EgressRule) toMultiNetworkPolicyEgressRule(ips map[FQDN]*FQDNStatus, bl
 	}
 }
 
-// FQDNs Returns all unique FQDNs defined in the network policy
 func (np *NetworkPolicy) FQDNs() []FQDN {
 	totalPossible := 0
 	for i := range np.Spec.Egress {
@@ -172,8 +172,6 @@ func (np *NetworkPolicy) FQDNs() []FQDN {
 	return fqdns
 }
 
-// ToMultiNetworkPolicy converts the NetworkPolicy to a mnetv1beta1.MultiNetworkPolicy.
-// If no Egress rules are specified, nil is returned.
 func (np *NetworkPolicy) ToMultiNetworkPolicy(fqdnStatuses []FQDNStatus) *mnetv1beta1.MultiNetworkPolicy {
 	// 前端没有校验的情况下，egress: []和egress: [{}]都是可以传入的，而egress: {}由于类型不匹配，前端不管是否有校验的情况下都会报错
 	// 目前前端已添加校验，所以极端的全阻断egress: []和全放行egress: [{}]都是无法传入的
@@ -232,8 +230,6 @@ func (np *NetworkPolicy) ToMultiNetworkPolicy(fqdnStatuses []FQDNStatus) *mnetv1
 	}
 }
 
-// Update updates the status of the FQDN.
-// If addresses were cleared due to an error during the update, the method returns true.
 func (f *FQDNStatus) Update(
 	cidrs []*CIDR, reason NetworkPolicyResolutionReason, message string, retryTimeoutSeconds int,
 ) bool {
@@ -250,7 +246,7 @@ func (f *FQDNStatus) Update(
 			now := metav1.Now()
 			f.FailingSince = &now
 		} else {
-			// 持续失败中，对比ResolvedFailingSince判断是否真正超时
+			// 持续失败中，对比FailingSince判断是否真正超时
 			deadline := f.FailingSince.Add(time.Duration(retryTimeoutSeconds) * time.Second)
 			if time.Now().After(deadline) {
 				if len(f.Addresses) > 0 {
@@ -280,19 +276,6 @@ func (f *FQDNStatus) Update(
 
 	return cleared
 }
-
-/*
-func NewFQDNStatus(fqdn FQDN, cidrs []*CIDR, reason NetworkPolicyResolutionReason, message string) FQDNStatus {
-	timeNow := metav1.Now()
-	return FQDNStatus{
-		FQDN: fqdn,
-		//LastSuccessfulTime: timeNow,
-		LastTransitionTime: timeNow,
-		Reason:             reason,
-		Message:            message,
-		Addresses:          CIDRList(cidrs).String(),
-	}
-}*/
 
 type FQDNStatusList []FQDNStatus
 

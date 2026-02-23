@@ -11,7 +11,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// reconcileNetworkPolicyDeletion Removes the underlying network policy
 func (r *NetworkPolicyReconciler) reconcileNetworkPolicyDeletion(ctx context.Context, np *v1alpha1.NetworkPolicy) error {
 	mnp := &mnetv1beta1.MultiNetworkPolicy{}
 

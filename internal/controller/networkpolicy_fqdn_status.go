@@ -11,8 +11,6 @@ import (
 	"k8s.io/client-go/tools/record"
 )
 
-// updateFQDNStatuses updates the status of each FQDN in the network policy according to the results and the previous
-// status
 func updateFQDNStatuses(
 	recorder record.EventRecorder, object runtime.Object,
 	previous []v1alpha1.FQDNStatus, results network.DNSResolverResultList,
@@ -22,17 +20,17 @@ func updateFQDNStatuses(
 	previousLookup := v1alpha1.FQDNStatusList(previous).LookupTable()
 
 	for _, result := range results {
-		var status *v1alpha1.FQDNStatus
+		var status v1alpha1.FQDNStatus
 		if existing, ok := previousLookup[result.FQDN]; ok {
-			status = existing
+			status = *existing
 		} else {
-			status = &v1alpha1.FQDNStatus{
+			status = v1alpha1.FQDNStatus{
 				FQDN: result.FQDN,
-			}
+			}			
 		}
 
 		cleared := status.Update(result.CIDRs, result.Status, result.Message, retryTimeoutSeconds)
-		newFQDNStatuses = append(newFQDNStatuses, *status)
+		newFQDNStatuses = append(newFQDNStatuses, status)
 
 		if cleared {
             var eventMsg string
@@ -40,11 +38,10 @@ func updateFQDNStatuses(
             if result.Status.Transient() {
 				eventReason = "StaleIPsRemoved"
                 eventMsg = fmt.Sprintf(
-                    "Removed stale IPs for FQDN %s after %s (Status: %s)", // . Last successful resolution was %s ago",
+                    "Removed stale IPs for FQDN %s after %s (Status: %s)",
                     status.FQDN,
                     (time.Duration(retryTimeoutSeconds) * time.Second).String(),
 					status.Reason,
-                    //time.Since(status.LastSuccessfulTime.Time).Round(time.Second).String(),
                 )
             } else {
 				eventReason = "IPsRevoked"
