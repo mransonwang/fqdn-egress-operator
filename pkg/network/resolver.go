@@ -23,11 +23,11 @@ func (e lookupError) Error() string {
 }
 
 type DNSResolverResult struct {
-	FQDN v1alpha1.FQDN
-	Error error
-	Status v1alpha1.NetworkPolicyResolutionReason
+	FQDN    v1alpha1.FQDN
+	Error   error
+	Status  v1alpha1.NetworkPolicyResolutionReason
 	Message string
-	CIDRs []*v1alpha1.CIDR
+	CIDRs   []*v1alpha1.CIDR
 }
 
 func NewDNSResolverResult(
@@ -59,6 +59,7 @@ func resolutionReason(err error) v1alpha1.NetworkPolicyResolutionReason {
 	if errors.As(err, &lookupErr) {
 		return lookupErr.Reason
 	}
+	// 如果由于DNS防火墙的限制不让访问，就会执行到这个分支
 	if errors.Is(err, context.DeadlineExceeded) {
 		return v1alpha1.NetworkPolicyResolutionTimeout
 	}
@@ -113,31 +114,31 @@ func resolutionMessage(err error) string {
 
 type DNSResolverResultList []*DNSResolverResult
 
-func (dlr DNSResolverResultList) CIDRs() []*v1alpha1.CIDR {
+func (rl DNSResolverResultList) CIDRs() []*v1alpha1.CIDR {
 	total := 0
-	for i := range dlr {
-		total += len(dlr[i].CIDRs)
+	for i := range rl {
+		total += len(rl[i].CIDRs)
 	}
 	if total == 0 {
 		return []*v1alpha1.CIDR{}
 	}
 
-	cidrs := make([]*v1alpha1.CIDR, 0, total)
-	for i := range dlr {
-		cidrs = append(cidrs, dlr[i].CIDRs...)
+	allCIDRs := make([]*v1alpha1.CIDR, 0, total)
+	for i := range rl {
+		allCIDRs = append(allCIDRs, rl[i].CIDRs...)
 	}
-	return cidrs
+	return allCIDRs
 }
 
-func (dlr DNSResolverResultList) AggregatedResolutionStatus() v1alpha1.NetworkPolicyResolutionReason {
-	total := len(dlr)
+func (rl DNSResolverResultList) AggregatedResolutionStatus() v1alpha1.NetworkPolicyResolutionReason {
+	total := len(rl)
 	if total == 0 {
 		return v1alpha1.NetworkPolicyResolutionSuccess
 	}
 
 	successCount := 0
-	for i := range dlr {
-		if dlr[i].Status == v1alpha1.NetworkPolicyResolutionSuccess {
+	for i := range rl {
+		if rl[i].Status == v1alpha1.NetworkPolicyResolutionSuccess {
 			successCount++
 		}
 	}
@@ -151,25 +152,25 @@ func (dlr DNSResolverResultList) AggregatedResolutionStatus() v1alpha1.NetworkPo
 	return v1alpha1.NetworkPolicyResolutionPartialSuccess
 }
 
-func (dlr DNSResolverResultList) AggregatedResolutionMessage() string {
-	total := len(dlr)
+func (rl DNSResolverResultList) AggregatedResolutionMessage() string {
+	total := len(rl)
 	// egress: []
 	if total == 0 {
 		return "Network policy has no FQDNs defined."
 	}
 
 	successCount := 0
-	var resultWithWorstError *DNSResolverResult
+	var worstResult *DNSResolverResult
 
-	for i := range dlr {
-		result := dlr[i]
+	for i := range rl {
+		result := rl[i]
 		if result.Status == v1alpha1.NetworkPolicyResolutionSuccess {
 			successCount++
 		} else {
 			// 按照五种状态排优先级，取优先级最高的
 			// Error > HostNotFound > InvalidFormat > Timeout > TemporaryError
-			if resultWithWorstError == nil || result.Status.Priority() > resultWithWorstError.Status.Priority() {
-				resultWithWorstError = result
+			if worstResult == nil || result.Status.Priority() > worstResult.Status.Priority() {
+				worstResult = result
 			}
 		}
 	}
@@ -179,15 +180,15 @@ func (dlr DNSResolverResultList) AggregatedResolutionMessage() string {
 	}
 
 	sampleMessage := "Unknown error"
-	if resultWithWorstError != nil {
-		resMsg := resolutionMessage(resultWithWorstError.Error)
+	if worstResult != nil {
+		resMsg := resolutionMessage(worstResult.Error)
 		// 需要将原生的信息显示出来，利于排查
-		rawErr := resultWithWorstError.Error.Error()
+		rawErr := worstResult.Error.Error()
 		if resMsg == rawErr {
 			sampleMessage = resMsg
 		} else {
 			sampleMessage = fmt.Sprintf("%s: %s", resMsg, rawErr)
-		}		
+		}
 	}
 
 	if successCount == 0 {
@@ -197,10 +198,10 @@ func (dlr DNSResolverResultList) AggregatedResolutionMessage() string {
 	return fmt.Sprintf("Partially resolved (%d/%d FQDNs). %s.", successCount, total, sampleMessage)
 }
 
-func (dlr DNSResolverResultList) LookupTable() map[v1alpha1.FQDN]*DNSResolverResult {
-	lookup := make(map[v1alpha1.FQDN]*DNSResolverResult, len(dlr))
-	for i := range dlr {
-		lookup[dlr[i].FQDN] = dlr[i]
+func (rl DNSResolverResultList) LookupTable() map[v1alpha1.FQDN]*DNSResolverResult {
+	lookup := make(map[v1alpha1.FQDN]*DNSResolverResult, len(rl))
+	for i := range rl {
+		lookup[rl[i].FQDN] = rl[i]
 	}
 	return lookup
 }
@@ -259,7 +260,7 @@ func (r *DNSResolver) Resolve(
 		return DNSResolverResultList{}
 	}
 
-	results := make(chan *DNSResolverResult, numFQDNs)
+	resultsChan := make(chan *DNSResolverResult, numFQDNs)
 	sem := make(chan struct{}, maxConcurrent)
 
 	var wg sync.WaitGroup
@@ -272,7 +273,7 @@ func (r *DNSResolver) Resolve(
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
 			case <-ctx.Done():
-				results <- NewDNSResolverResult(rFQDN, nil, &lookupError{
+				resultsChan <- NewDNSResolverResult(rFQDN, nil, &lookupError{
 					Reason:  v1alpha1.NetworkPolicyResolutionError,
 					Message: "Context canceled before resolution could start",
 				})
@@ -282,20 +283,20 @@ func (r *DNSResolver) Resolve(
 			childCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			cidrs, err := r.lookupIP(childCtx, networkType, rFQDN)
-			results <- NewDNSResolverResult(rFQDN, cidrs, err)
+			resultsChan <- NewDNSResolverResult(rFQDN, cidrs, err)
 		}(fqdn)
 	}
 
 	go func() {
 		wg.Wait()
-		close(results)
+		close(resultsChan)
 	}()
 
-	lookupResults := make(DNSResolverResultList, 0, numFQDNs)
-	for res := range results {
-		lookupResults = append(lookupResults, res)
+	finalResults := make(DNSResolverResultList, 0, numFQDNs)
+	for res := range resultsChan {
+		finalResults = append(finalResults, res)
 	}
-	return lookupResults
+	return finalResults
 }
 
 type FakeDNSResolver struct {

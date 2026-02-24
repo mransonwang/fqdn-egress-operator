@@ -47,7 +47,7 @@ func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolic
 
 			if ps.allowAll {
 				continue
-			}			
+			}
 
 			if len(rule.Ports) == 0 {
 				ps.allowAll = true
@@ -69,7 +69,7 @@ func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolic
 	// cidrGrouping中的数据格式为，cidr是8.8.8.8/32, fingerprint是TCP:80,TCP:443
 	// 这里引入指纹的概念，它用于唯一标识放行端口，可以是一个端口，也可以是两个端口甚至更多端口
 	type cidrGrouping struct {
-		cidr string
+		cidr        string
 		fingerprint string
 	}
 
@@ -90,7 +90,7 @@ func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolic
 	// cidrToPortsMap[8.8.8.8/32][TCP:80] = {Protocol: TCP, Port: 80}
 	// cidrToPortsMap[8.8.8.8/32][TCP:443] = {Protocol: TCP, Port: 443}
 	for cidr, ps := range cidrToPortsMap {
-		var portSlice []mnetv1beta1.MultiNetworkPolicyPort		
+		var portSlice []mnetv1beta1.MultiNetworkPolicyPort
 		if !ps.allowAll && len(ps.ports) > 0 {
 			portSlice = make([]mnetv1beta1.MultiNetworkPolicyPort, 0, len(ps.ports))
 			for _, p := range ps.ports {
@@ -100,22 +100,22 @@ func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolic
 			sort.Slice(portSlice, func(i, j int) bool {
 				return getSinglePortKey(portSlice[i]) < getSinglePortKey(portSlice[j])
 			})
-		}	
-		
+		}
+
 		// 生成指纹，从[{Protocol: TCP, Port: 80}, {Protocol: TCP, Port: 443}]生成TCP:80,TCP:443
 		f := getPortsFingerprint(portSlice)
 
 		// groupings[0].cidr = 8.8.8.8/32
 		// groupings[0].fingerprint = TCP:80,TCP:443
 		groupings = append(groupings, cidrGrouping{
-			cidr: cidr,
+			cidr:        cidr,
 			fingerprint: f,
 		})
 
 		// 指纹计数自增1
 		// fingerprintIPCounts[TCP:80,TCP:443]++
 		fingerprintIPCounts[f]++
-		
+
 		// 判断诸如fingerprintToPortSlice[TCP:80,TCP:443]是否存在
 		if _, ok := fingerprintToPortSlice[f]; !ok {
 			// 如果不存在，则添加键，并将键值指向portSlice
@@ -129,7 +129,7 @@ func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolic
 	// 每个指纹所包含的所有IP地址
 	portsFingerprintToCidrs := make(map[string][]string, numFingerprints)
 	// 遍历指纹Map，f相当于指纹键TCP:80,TCP:443，count相当于指纹包含的IP地址数量
-	for f, count := range fingerprintIPCounts{
+	for f, count := range fingerprintIPCounts {
 		// 为每一个指纹生成对应的Map，用于存放所对应的IP地址
 		// 无论count是1还是1000，这里都只发生一次精确的内存分配
 		portsFingerprintToCidrs[f] = make([]string, 0, count)
@@ -144,7 +144,7 @@ func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolic
 
 	// 阶段4：构造MultiNetworkPolicy对象
 	newEgressRules := make([]mnetv1beta1.MultiNetworkPolicyEgressRule, 0, numFingerprints)
-	
+
 	sortedFingerprints := make([]string, 0, numFingerprints)
 	for f := range portsFingerprintToCidrs {
 		sortedFingerprints = append(sortedFingerprints, f)
@@ -192,7 +192,7 @@ func getPortsFingerprint(ports []mnetv1beta1.MultiNetworkPolicyPort) string {
 	for i := range ports {
 		tmp[i] = getSinglePortKey(ports[i])
 	}
-	
+
 	sort.Strings(tmp)
 	return strings.Join(tmp, ",")
 }
@@ -213,6 +213,6 @@ func CountUniqueAddresses(mnp *mnetv1beta1.MultiNetworkPolicy) int {
 func IsEmpty(mnp *mnetv1beta1.MultiNetworkPolicy) bool {
 	if mnp == nil {
 		return true
-	}	
+	}
 	return len(mnp.Spec.Ingress) == 0 && len(mnp.Spec.Egress) == 0
 }

@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 
 	"go.uber.org/automaxprocs/maxprocs"
-	
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -108,7 +108,7 @@ func main() {
 	}))
 	if err != nil {
 		setupLog.Error(err, "unable to set GOMAXPROCS")
-	}	
+	}
 
 	if maxConcurrentResolves <= 0 {
 		maxConcurrentResolves = min(max(1, goruntime.GOMAXPROCS(0)), 20)

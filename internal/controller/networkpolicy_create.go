@@ -26,12 +26,22 @@ func (r *NetworkPolicyReconciler) reconcileNetworkPolicyCreation(
 		if current.Labels == nil {
 			current.Labels = make(map[string]string, len(mnp.Labels))
 		}
+		for k := range current.Labels {
+			if _, exists := mnp.Labels[k]; !exists {
+				delete(current.Labels, k)
+			}
+		}
 		for k, v := range mnp.Labels {
 			current.Labels[k] = v
 		}
 
 		if current.Annotations == nil {
 			current.Annotations = make(map[string]string, len(mnp.Annotations))
+		}
+		for k := range current.Annotations {
+			if _, exists := mnp.Annotations[k]; !exists {
+				delete(current.Annotations, k)
+			}
 		}
 		for k, v := range mnp.Annotations {
 			current.Annotations[k] = v

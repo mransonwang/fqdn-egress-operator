@@ -134,7 +134,7 @@ spec:
                       items:
                         description: "FQDN represents a Fully Qualified Domain Name
                           used to uniquely identify a host on the internet.\n\nFormat
-                          constraints:\n\t▸ Rule: Labels separated by dots (e.g.,
+                          constraints:\n\n\t▸ Rule: Labels separated by dots (e.g.,
                           api.example.com)\n\t▸ Rule: Alphanumeric and hyphens only\n\t▸
                           Rule: No leading or trailing hyphens\n\t▸ Rule: Top-level
                           domain must be 2+ characters"
@@ -150,11 +150,6 @@ spec:
                 maxItems: 30
                 minItems: 1
                 type: array
-                x-kubernetes-validations:
-                - message: spec.egress in body should not contain overlapping toFQDNs
-                    and ports across different rules
-                  rule: self.all(i, self.filter(j, j.toFQDNs.exists(f, f in i.toFQDNs)
-                    && j.ports.exists(p, p in i.ports)).size() == 1)
               enabledNetworkType:
                 default: ipv4
                 description: "EnabledNetworkType determines the IP address families

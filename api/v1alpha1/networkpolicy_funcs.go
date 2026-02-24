@@ -139,7 +139,7 @@ func (r *EgressRule) toMultiNetworkPolicyEgressRule(ips map[FQDN]*FQDNStatus, bl
 				Protocol: protoPtr,
 			}
 		}
-	}	
+	}
 
 	return &mnetv1beta1.MultiNetworkPolicyEgressRule{
 		Ports: ports,

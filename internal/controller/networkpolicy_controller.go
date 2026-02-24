@@ -138,7 +138,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		// 创建底层MultiNetworkPolicy出错后固定每60秒重试一次
 		logger.Info("Network policy failed to apply", "error", err.Error(), "requeueAfter", "60s")
-		return ctrl.Result{RequeueAfter:  60 * time.Second}, nil
+		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
 	// 无法解析出任何IP地址，因此无法构造egress: []中的内容，所以生成的底层MultiNetworkPolicy实质上没有egress元素
@@ -178,7 +178,7 @@ func (r *NetworkPolicyReconciler) updateStatusIfNeeded(ctx context.Context, np *
 		}
 	}
 	np.Status.ActiveFQDNCount = activeCount
-	np.Status.FailingFQDNCount = failingCount	
+	np.Status.FailingFQDNCount = failingCount
 
 	sortStatus := func(status *v1alpha1.NetworkPolicyStatus) {
 		sort.Slice(status.FQDNs, func(i, j int) bool {

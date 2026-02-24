@@ -31,11 +31,11 @@ func (r *NetworkPolicyReconciler) reconcileNetworkPolicyDeletion(ctx context.Con
 	}
 
 	r.EventRecorder.Event(
-		np, 
+		np,
 		corev1.EventTypeNormal,
-		utils.DeletionReason(mnp), 
+		utils.DeletionReason(mnp),
 		utils.DeletionMessage(mnp),
 	)
-	
+
 	return nil
 }
