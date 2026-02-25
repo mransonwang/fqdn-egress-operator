@@ -24,10 +24,16 @@ func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolic
 
 	// 引入全端口豁免逻辑
 	type portSet struct {
-		allowAll bool // 核心标记：标识该IP是否拥有全端口放行特权
-		ports    map[string]mnetv1beta1.MultiNetworkPolicyPort
+		// 标识是否拥有全端口放行特权，当allowAll为true时，ports就为nil，只有allowAll为false时，ports才有值
+		allowAll bool
+		// ports的键，形如TCP:80，对应的键值形如{Protocol: TCP, Port: 80}
+		// 也可以多个，形如[TCP:80, TCP:443]，则对应的键值形如[{Protocol: TCP, Port: 80}, {Protocol: TCP, Port: 443}]
+		ports map[string]mnetv1beta1.MultiNetworkPolicyPort
 	}
 
+	// cidrToPortsMap的键，形如10.0.0.1/32
+	// 对应的键值是portSet的地址，形如0x1111，通过对该地址取值，可以获得portSet值，形如{allowAll: false, ports: {TCP:80:  {Protocol: TCP, Port: 80}, TCP:443: {Protocol: TCP, Port: 443}}}
+	// 这样就把地址和它拥有的权限对应起来
 	cidrToPortsMap := make(map[string]*portSet, totalPeers)
 
 	for i := range mnp.Spec.Egress {
@@ -38,23 +44,46 @@ func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolic
 				continue
 			}
 			cidr := peer.IPBlock.CIDR
-
+			// 拿到了一个cidr，判断诸如cidrToPortsMap[cidr]是否存在
 			ps, ok := cidrToPortsMap[cidr]
 			if !ok {
+				// 如果不存在，则初始化portSet的ports（隐含allowAll缺省赋值为false），并取portSet的地址赋给ps
+				// 这里ports的容量是估出来的，因为一般开放的端口无非就是以下一些（只是举例说明）：
+				// {Protocol: TCP, Port: 80}
+				// {Protocol: TCP, Port: 443}
+				// {Protocol: TCP, Port: 53}
+				// {Protocol: UDP, Port: 53}
+				// {Protocol: TCP, Port: 8080}
+				// {Protocol: TCP, Port: 22}
+				// {Protocol: TCP, Port: 8443}
+				// 所以总共可能的数量在10个以内（不需要计算这些情况的组合），不会太多，这里硬编码用16满足绝大部分场景的需求，或者更浪费一点用32也行
 				ps = &portSet{ports: make(map[string]mnetv1beta1.MultiNetworkPolicyPort, 16)}
+				// 作为指针的ps保存于cidrToPortsMap中
 				cidrToPortsMap[cidr] = ps
 			}
 
+			// 首次，ps.allowAll肯定为false，所以会往下走
+			// 后续，ps.allowAll有可能为true
 			if ps.allowAll {
 				continue
 			}
 
+			// 如果没有指定特定端口，则认为是全端口放行
 			if len(rule.Ports) == 0 {
+				// 设置全端口放行标识为true
 				ps.allowAll = true
+				// ports的值设置为nil，因为全端口情况下，无谓再记录ports了
 				ps.ports = nil
 				continue
 			}
 
+			// 如果不是全端口放行，那当然得记录放行的ports了
+			// 把IP地址所对应的端口数组进行遍历
+			// 比如端口数组包含了
+			// {Protocol: TCP, Port: 80}
+			// {Protocol: TCP, Port: 443}
+			// {Protocol: UDP, Port: 53}
+			// 就要遍历3次
 			for k := range rule.Ports {
 				p := rule.Ports[k]
 				// 把{Protocol: TCP, Port: 80}转换成诸如TCP:80这样的字符串
@@ -80,29 +109,31 @@ func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolic
 	// 这里就硬编码32个指纹，应该是可以满足绝大部分场景需求的
 	fingerprintIPCounts := make(map[string]int, 32)
 
-	// 指纹和MultiNetworkPolicyPort数组的对应关系
+	// 指纹和MultiNetworkPolicyPort数组的对应关系，有多少指纹就预分配多大容量的map
 	// fingerprintToPortSlice[TCP:80,TCP:443] = [{Protocol: TCP, Port: 80}, {Protocol: TCP, Port: 443}]
 	fingerprintToPortSlice := make(map[string][]mnetv1beta1.MultiNetworkPolicyPort, 32)
 
 	// 遍历cidrToPortsMap
 	// cidr就相当于8.8.8.8/32
-	// portsMap就相当于[TCP:80] = {Protocol: TCP, Port: 80}, [TCP:443] = {Protocol: TCP, Port: 443}
-	// cidrToPortsMap[8.8.8.8/32][TCP:80] = {Protocol: TCP, Port: 80}
-	// cidrToPortsMap[8.8.8.8/32][TCP:443] = {Protocol: TCP, Port: 443}
+	// ps是portSet的指针
 	for cidr, ps := range cidrToPortsMap {
 		var portSlice []mnetv1beta1.MultiNetworkPolicyPort
+		// 如果不是全端口放行，转入按端口放行的判断逻辑
 		if !ps.allowAll && len(ps.ports) > 0 {
+			// 根据ports的大小分配portSlice容量
 			portSlice = make([]mnetv1beta1.MultiNetworkPolicyPort, 0, len(ps.ports))
 			for _, p := range ps.ports {
+				// portSlice的最终形态类似[{Protocol: TCP, Port: 80}, {Protocol: TCP, Port: 443}]
 				portSlice = append(portSlice, p)
 			}
-			// 确定性排序，防止 DeepEqual 乱序误判
+			// 确定性排序，防止DeepEqual乱序误判
 			sort.Slice(portSlice, func(i, j int) bool {
 				return getSinglePortKey(portSlice[i]) < getSinglePortKey(portSlice[j])
 			})
 		}
 
-		// 生成指纹，从[{Protocol: TCP, Port: 80}, {Protocol: TCP, Port: 443}]生成TCP:80,TCP:443
+		// 按端口放行情况下，生成指纹，从[{Protocol: TCP, Port: 80}, {Protocol: TCP, Port: 443}]生成TCP:80,TCP:443
+		// 全端口放行情况下，生成指纹，因传入的portSlice为nil，所以指纹为All ports
 		f := getPortsFingerprint(portSlice)
 
 		// groupings[0].cidr = 8.8.8.8/32
@@ -119,6 +150,8 @@ func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolic
 		// 判断诸如fingerprintToPortSlice[TCP:80,TCP:443]是否存在
 		if _, ok := fingerprintToPortSlice[f]; !ok {
 			// 如果不存在，则添加键，并将键值指向portSlice
+			// 按端口放行情况下，portSlice类似于[{Protocol: TCP, Port: 80}, {Protocol: TCP, Port: 443}]
+			// 全端口放行情况下，portSlice是nil，对应于网络策略所约定的没有指定端口就是放行所有端口的准测
 			fingerprintToPortSlice[f] = portSlice
 		}
 	}
@@ -176,7 +209,7 @@ func getSinglePortKey(p mnetv1beta1.MultiNetworkPolicyPort) string {
 	if p.Protocol != nil {
 		protocol = string(*p.Protocol)
 	}
-	port := "any"
+	port := "Any"
 	if p.Port != nil {
 		port = p.Port.String()
 	}
@@ -185,7 +218,7 @@ func getSinglePortKey(p mnetv1beta1.MultiNetworkPolicyPort) string {
 
 func getPortsFingerprint(ports []mnetv1beta1.MultiNetworkPolicyPort) string {
 	if len(ports) == 0 {
-		return "all-ports"
+		return "All ports"
 	}
 
 	tmp := make([]string, len(ports))

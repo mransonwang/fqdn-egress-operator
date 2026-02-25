@@ -369,3 +369,13 @@ catalog-build: opm ## Build a catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+
+RUN_NAMESPACE ?= demo-fqdn
+
+.PHONY: bundle-run
+bundle-run:
+	operator-sdk run bundle $(BUNDLE_IMG) -n $(RUN_NAMESPACE)
+
+.PHONY: bundle-cleanup
+bundle-cleanup:
+	operator-sdk cleanup fqdn-egress-operator -n $(RUN_NAMESPACE)
