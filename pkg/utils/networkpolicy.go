@@ -93,6 +93,26 @@ func RemoveDuplicateCIDRsInMultiNetworkPolicy(mnp *mnetv1beta1.MultiNetworkPolic
 		}
 	}
 
+	// 阶段1.5：协议级全端口收敛
+	// 解决语义重叠：如果某协议拥有Any特权，则剔除该协议下的所有特定端口
+	for _, ps := range cidrToPortsMap {
+		if ps.allowAll || len(ps.ports) == 0 {
+			continue
+		}
+		
+		for _, proto := range []string{"TCP", "UDP", "SCTP"} {
+			anyKey := proto + ":Any"
+			if _, hasAny := ps.ports[anyKey]; hasAny {
+				// 遍历并删除该协议下被覆盖的具体端口，如TCP:53将被TCP:Any吞并
+				for k := range ps.ports {
+					if strings.HasPrefix(k, proto+":") && k != anyKey {
+						delete(ps.ports, k)
+					}
+				}
+			}
+		}
+	}	
+
 	// 阶段2：预计算与计数
 	// 经过上面的处理，IP地址已经去重了，并且每个IP地址的放行端口也去重了
 	// cidrGrouping中的数据格式为，cidr是8.8.8.8/32, fingerprint是TCP:80,TCP:443

@@ -109,7 +109,7 @@ type MultiNetworkPolicyPort struct {
 	//
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
-	Port int32 `json:"port"`
+	Port *int32 `json:"port,omitempty"`
 }
 
 // FQDN represents a Fully Qualified Domain Name used to uniquely identify a host on the internet.
@@ -122,6 +122,7 @@ type MultiNetworkPolicyPort struct {
 //	▸ Rule: Top-level domain must be 2+ characters
 //
 // +kubebuilder:validation:Pattern=`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`
+// +kubebuilder:validation:MinLength=1
 type FQDN string
 
 // EgressRule defines the rules for outbound network traffic.
@@ -133,13 +134,16 @@ type EgressRule struct {
 	// +kubebuilder:validation:MaxItems=100
 	// +listType=set
 	ToFQDNs []FQDN `json:"toFQDNs"`
+
+	// // +listType=map
+	// // +listMapKey=protocol
+	// // +listMapKey=port
+
 	// Ports specifies the list of network ports allowed for outbound traffic access.
 	//
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:MaxItems=10
-	// +listType=map
-	// +listMapKey=protocol
-	// +listMapKey=port
+	// +listType=atomic
 	Ports []MultiNetworkPolicyPort `json:"ports,omitempty"`
 	// BlockPrivateIPs overrides the default configuration of the same name at the NetworkPolicySpec level for the current rule.
 	//
@@ -155,6 +159,15 @@ type NetworkPolicySpec struct {
 	// +kubebuilder:validation:MinLength=1
 	TargetNetwork string `json:"targetNetwork"`
 
+	// // +kubebuilder:validation:XValidation:rule="self.filter(r, !has(r.ports) || size(r.ports) == 0).all(r1, self.filter(r2, (!has(r2.ports) || size(r2.ports) == 0) && r2.toFQDNs.exists(f, f in r1.toFQDNs)).size() == 1)",message="spec.egress in body should not contain overlapping toFQDNs across different rules when ports are omitted (all-ports)"
+	// // +kubebuilder:validation:XValidation:rule="self.filter(r, has(r.ports) && size(r.ports) > 0).all(r1, r1.ports.all(p1, self.filter(r2, has(r2.ports) && size(r2.ports) > 0 && r2.toFQDNs.exists(f, f in r1.toFQDNs) && r2.ports.exists(p2, p2.port == p1.port && p2.protocol == p1.protocol)).size() == 1))",message="spec.egress in body should not contain overlapping toFQDNs and ports across different rules"
+
+	// Egress defines the outbound network traffic allowance rules for the selected Pods.
+	//
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=30
+	Egress []EgressRule `json:"egress"`	
+
 	// MatchLabels defines a collection of label key-value pairs used to select the Pods to which this NetworkPolicy applies.
 	//
 	// +kubebuilder:validation:Optional
@@ -169,15 +182,6 @@ type NetworkPolicySpec struct {
 	// +kubebuilder:validation:MaxItems=30
 	// +kubebuilder:validation:XValidation:rule="self.all(i, self.filter(j, i.key == j.key && i.operator == j.operator && j.values.exists(v, v in i.values)).size() == 1)",message="spec.matchExpressions in body should not contain overlapping values for the same key and operator"
 	MatchExpressions []LabelSelectorRequirement `json:"matchExpressions,omitempty"`
-
-	// // +kubebuilder:validation:XValidation:rule="self.filter(r, !has(r.ports) || size(r.ports) == 0).all(r1, self.filter(r2, (!has(r2.ports) || size(r2.ports) == 0) && r2.toFQDNs.exists(f, f in r1.toFQDNs)).size() == 1)",message="spec.egress in body should not contain overlapping toFQDNs across different rules when ports are omitted (all-ports)"
-	// // +kubebuilder:validation:XValidation:rule="self.filter(r, has(r.ports) && size(r.ports) > 0).all(r1, r1.ports.all(p1, self.filter(r2, has(r2.ports) && size(r2.ports) > 0 && r2.toFQDNs.exists(f, f in r1.toFQDNs) && r2.ports.exists(p2, p2.port == p1.port && p2.protocol == p1.protocol)).size() == 1))",message="spec.egress in body should not contain overlapping toFQDNs and ports across different rules"
-
-	// Egress defines the outbound network traffic allowance rules for the selected Pods.
-	//
-	// +kubebuilder:validation:MinItems=1
-	// +kubebuilder:validation:MaxItems=30
-	Egress []EgressRule `json:"egress"`
 
 	// EnabledNetworkType determines the IP address families used for DNS resolution and subsequent traffic allowance.
 	//

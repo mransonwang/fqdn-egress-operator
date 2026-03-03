@@ -128,8 +128,12 @@ func (r *EgressRule) toMultiNetworkPolicyEgressRule(ips map[FQDN]*FQDNStatus, bl
 	if len(r.Ports) > 0 {
 		ports = make([]mnetv1beta1.MultiNetworkPolicyPort, len(r.Ports))
 		for i := range r.Ports {
-			valPtr := new(intstr.IntOrString)
-			*valPtr = intstr.FromInt(int(r.Ports[i].Port))
+			var valPtr *intstr.IntOrString
+
+			if r.Ports[i].Port != nil {
+				valPtr = new(intstr.IntOrString)
+				*valPtr = intstr.FromInt(int(*r.Ports[i].Port))
+			}
 
 			protoPtr := new(corev1.Protocol)
 			*protoPtr = r.Ports[i].Protocol

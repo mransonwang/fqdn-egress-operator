@@ -119,15 +119,11 @@ spec:
                             - SCTP
                             type: string
                         required:
-                        - port
                         - protocol
                         type: object
                       maxItems: 10
                       type: array
-                      x-kubernetes-list-map-keys:
-                      - protocol
-                      - port
-                      x-kubernetes-list-type: map
+                      x-kubernetes-list-type: atomic
                     toFQDNs:
                       description: ToFQDNs contains the list of target FQDNs allowed
                         for outbound traffic communication.
@@ -138,6 +134,7 @@ spec:
                           api.example.com)\n\t▸ Rule: Alphanumeric and hyphens only\n\t▸
                           Rule: No leading or trailing hyphens\n\t▸ Rule: Top-level
                           domain must be 2+ characters"
+                        minLength: 1
                         pattern: ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$
                         type: string
                       maxItems: 100
@@ -381,6 +378,7 @@ spec:
                     fqdn:
                       description: FQDN specifies the exact fully qualified domain
                         name that this resolution status tracks.
+                      minLength: 1
                       pattern: ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$
                       type: string
                     lastTransitionTime:
