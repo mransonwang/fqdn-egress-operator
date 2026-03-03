@@ -67,7 +67,7 @@ metadata:
     capabilities: Seamless Upgrades
     categories: Networking, Security, Monitoring
     containerImage: quay.io/turbosimone/fqdn-egress-operator:v1.0.5
-    createdAt: "2026-03-03T07:37:54Z"
+    createdAt: "2026-03-03T09:51:29Z"
     description: Creates and maintains NetworkPolicies that supports outbound flows
       based on FQDNs
     olm.skipRange: '>=1.0.0 <1.0.5'
@@ -263,7 +263,7 @@ spec:
           control-plane: controller-manager
         name: fqdn-egress-operator-controller-manager
         spec:
-          replicas: 1
+          replicas: 2
           selector:
             matchLabels:
               app.kubernetes.io/name: fqdn-egress-operator
