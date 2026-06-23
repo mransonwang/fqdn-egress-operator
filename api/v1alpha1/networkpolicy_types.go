@@ -99,6 +99,7 @@ type LabelSelectorRequirement struct {
 
 // MultiNetworkPolicyPort is a shadow struct used to apply custom kubebuilder validations.
 // It mirrors the underlying network policy port definition while enforcing strict port range and protocol constraints on user inputs.
+// +kubebuilder:validation:XValidation:rule="!has(self.endPort) || (has(self.port) && self.endPort >= self.port)",message="endPort must be greater than or equal to port, and port must be present when endPort is defined"
 type MultiNetworkPolicyPort struct {
 	// Protocol defines the transport layer protocol of the container network port.
 	//
@@ -110,6 +111,12 @@ type MultiNetworkPolicyPort struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	Port *int32 `json:"port,omitempty"`
+	// EndPort is the specific end port number allowed for traffic.
+	//
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	EndPort *int32 `json:"endPort,omitempty"`
 }
 
 // FQDN represents a Fully Qualified Domain Name used to uniquely identify a host on the internet.

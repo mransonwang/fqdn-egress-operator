@@ -102,6 +102,13 @@ spec:
                           MultiNetworkPolicyPort is a shadow struct used to apply custom kubebuilder validations.
                           It mirrors the underlying network policy port definition while enforcing strict port range and protocol constraints on user inputs.
                         properties:
+                          endPort:
+                            description: EndPort is the specific end port number allowed
+                              for traffic.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
                           port:
                             description: Port is the specific port number allowed
                               for traffic.
@@ -121,6 +128,11 @@ spec:
                         required:
                         - protocol
                         type: object
+                        x-kubernetes-validations:
+                        - message: endPort must be greater than or equal to port,
+                            and port must be present when endPort is defined
+                          rule: '!has(self.endPort) || (has(self.port) && self.endPort
+                            >= self.port)'
                       maxItems: 10
                       type: array
                       x-kubernetes-list-type: atomic

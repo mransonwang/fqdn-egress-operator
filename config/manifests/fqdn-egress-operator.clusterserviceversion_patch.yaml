@@ -48,10 +48,12 @@ spec:
         path: egress[0].ports[0].protocol
       - displayName: Port
         path: egress[0].ports[0].port
+      - displayName: End Port
+        path: egress[0].ports[0].endPort
       - displayName: Block Private IPs
         path: egress[0].blockPrivateIPs
         x-descriptors:
-        - urn:alm:descriptor:com.tectonic.ui:booleanSwitch        
+        - urn:alm:descriptor:com.tectonic.ui:booleanSwitch
       - displayName: Enabled Network Type
         path: enabledNetworkType
       - displayName: Resolution Timeout Seconds
@@ -63,7 +65,7 @@ spec:
       - displayName: Block Private IPs
         path: blockPrivateIPs
         x-descriptors:
-        - urn:alm:descriptor:com.tectonic.ui:booleanSwitch        
+        - urn:alm:descriptor:com.tectonic.ui:booleanSwitch
 #      - displayName: Pod Selector
 #        path: podSelector
 #      - displayName: Match Expressions

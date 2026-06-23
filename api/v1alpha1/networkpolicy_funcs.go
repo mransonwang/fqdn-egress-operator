@@ -142,6 +142,10 @@ func (r *EgressRule) toMultiNetworkPolicyEgressRule(ips map[FQDN]*FQDNStatus, bl
 				Port:     valPtr,
 				Protocol: protoPtr,
 			}
+
+			if r.Ports[i].EndPort != nil {
+                ports[i].EndPort = r.Ports[i].EndPort
+            }			
 		}
 	}
 
