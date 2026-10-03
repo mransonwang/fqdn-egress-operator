@@ -12,6 +12,10 @@ import (
 )
 
 func (r *NetworkPolicyReconciler) reconcileNetworkPolicyDeletion(ctx context.Context, np *v1alpha1.NetworkPolicy) error {
+	
+	// 确保策略egress: []时清空缓存
+	r.SlidingWindowCache.Delete(np.Namespace + "/" + np.Name)
+	
 	mnp := &mnetv1beta1.MultiNetworkPolicy{}
 
 	err := r.Get(ctx, client.ObjectKey{

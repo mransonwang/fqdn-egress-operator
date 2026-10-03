@@ -214,10 +214,17 @@ type DNSResolver struct {
 	resolver Resolver
 }
 
-func NewDNSResolver() *DNSResolver {
+func NewDNSResolver(upstreamDNS string) *DNSResolver {
 	return &DNSResolver{
 		resolver: &net.Resolver{
 			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				d := net.Dialer{
+					Timeout: 3 * time.Second,
+				}
+				targetAddr := net.JoinHostPort(upstreamDNS, "53")
+				return d.DialContext(ctx, network, targetAddr)
+			},		
 		},
 	}
 }

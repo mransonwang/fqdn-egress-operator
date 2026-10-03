@@ -280,11 +280,11 @@ spec:
                 default: 60
                 description: "TTLSeconds defines the polling interval to re-evaluate
                   and resolve all FQDN addresses.\n\nConfiguration:\n\t▸ Default:
-                  60s\n\t▸ Range: 5s to 1800s\n\t▸ Constraint: Must be strictly greater
+                  60s\n\t▸ Range: 3s to 1800s\n\t▸ Constraint: Must be strictly greater
                   than ResolutionTimeoutSeconds"
                 format: int32
                 maximum: 1800
-                minimum: 5
+                minimum: 3
                 type: integer
             required:
             - egress

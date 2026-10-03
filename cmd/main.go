@@ -74,6 +74,7 @@ func main() {
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
 	var maxConcurrentResolves int
+	var upstreamDNS string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -98,6 +99,11 @@ func main() {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	upstreamDNS = "172.30.0.10"
+	if envDNS := os.Getenv("UPSTREAM_DNS"); envDNS != "" {
+        upstreamDNS = envDNS
+    }
 
 	mainLogger := zap.New(zap.UseFlagOptions(&opts))
 	ctrl.SetLogger(mainLogger)
@@ -231,8 +237,9 @@ func main() {
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
 		EventRecorder:         mgr.GetEventRecorderFor("fqdn-egress-controller"),
-		DNSResolver:           network.NewDNSResolver(),
+		DNSResolver:           network.NewDNSResolver(upstreamDNS),
 		MaxConcurrentResolves: maxConcurrentResolves,
+		UpstreamDNS:           upstreamDNS,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NetworkPolicy")
 		os.Exit(1)
@@ -264,7 +271,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager", "maxConcurrentResolves", maxConcurrentResolves)
+	setupLog.Info("starting manager", "maxConcurrentResolves", maxConcurrentResolves, "upstreamDNS", upstreamDNS)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)

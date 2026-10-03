@@ -224,10 +224,10 @@ type NetworkPolicySpec struct {
 	//
 	// Configuration:
 	//	▸ Default: 60s
-	//	▸ Range: 5s to 1800s
+	//	▸ Range: 3s to 1800s
 	//	▸ Constraint: Must be strictly greater than ResolutionTimeoutSeconds
 	//
-	// +kubebuilder:validation:Minimum=5
+	// +kubebuilder:validation:Minimum=3
 	// +kubebuilder:validation:Maximum=1800
 	// +kubebuilder:default:=60
 	TTLSeconds int32 `json:"ttlSeconds,omitempty"`
