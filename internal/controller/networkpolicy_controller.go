@@ -112,7 +112,18 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if retentionDuration > 0 {
 		now := metav1.Now()
 
-		// a) 直接利用开头的 previous 提取旧时间戳索引
+		// 利用开头的previous提取旧时间戳索引，为快速定位IP做准备
+		/*
+		map[v1alpha1.FQDN]map[string]*metav1.Time{
+			"api.github.com": {
+				"140.82.112.4/32": &10:00:00,
+				"140.82.112.5/32": &10:05:00,
+			},
+			"open.feishu.cn": {
+				"112.95.8.11/32": &10:08:00,
+			},
+		}
+		*/
 		oldTimestamps := make(map[v1alpha1.FQDN]map[string]*metav1.Time, len(previous.Status.FQDNs))
 		for _, oldFqdn := range previous.Status.FQDNs {
 			ipMap := make(map[string]*metav1.Time, len(oldFqdn.Addresses))
@@ -122,7 +133,15 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			oldTimestamps[oldFqdn.FQDN] = ipMap
 		}
 		
-		// b) 索引本轮 DNS 成功解析到的 IP
+		// 索引本轮DNS成功解析到的IP，为快速定位IP做准备
+		/*
+		freshlyResolved = map[v1alpha1.FQDN]map[string]struct{}{
+			"api.github.com": {
+				"140.82.112.4/32": struct{}{},
+				"140.82.112.5/32": struct{}{},
+			},
+		}		
+		*/
 		freshlyResolved := make(map[v1alpha1.FQDN]map[string]struct{}, len(results))
 		for _, res := range results {
 			if res.Status == v1alpha1.NetworkPolicyResolutionSuccess {
@@ -134,39 +153,49 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 		
-		// c) 补全现有 IP 时间戳 + 追回在 retention 容忍期内的历史 IP
+		// 因为从updateFQDNStatuses出来的np.Status.FQDNs是没有时间戳的，我们要基于这个来做处理
 		for i := range np.Status.FQDNs {
 			fqdnStatus := &np.Status.FQDNs[i]
 			fqdn := fqdnStatus.FQDN
 
+			// 用来存放已经处理过的IP
 			existingIPs := make(map[string]struct{}, len(fqdnStatus.Addresses))
+			// 用来存放合资格的IP
 			var finalEntries []v1alpha1.AddressEntry
 
-			// 1) 处理 updateFQDNStatuses 留下的 IP（包含本轮新查出的，以及重试期内留存的）
+			// 遍历IP
 			for _, entry := range fqdnStatus.Addresses {
 				addr := entry.Address
 
+				// freshlyResolved发挥威力了，可以很快定位到给定IP是否在其内
 				if _, isFresh := freshlyResolved[fqdn][addr]; isFresh {
-					// 本轮 DNS 成功解析出来的：更新时间戳为当前时间，100% 保留
+					// 属于本轮DNS成功解析出来的，更新时间戳为当前时间，留存
 					existingIPs[addr] = struct{}{}
 					finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: addr, LastSeenTime: &now})
 				} else if oldTs, ok := oldTimestamps[fqdn][addr]; ok && oldTs != nil {
-					// DNS 故障/未查出，但还在 Retention 容忍期内的 IP：保留并继承旧时间戳
+					// 说明这个IP地址是DNS由于网络抖动未查出，继续使用的上一轮的IP地址
+					// 对比时间，如果还在有效期内，留存；如果已超出有效期，则什么也不做，相当于丢弃
 					if now.Time.Sub(oldTs.Time) <= retentionDuration {
 						existingIPs[addr] = struct{}{}
 						finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: addr, LastSeenTime: oldTs})
 					}
 				} else {
-					// 兜底：无旧时间戳的新 IP，赋予当前时间并保留
+					// 既不是本轮查出来的，也没有旧时间戳，说明是由非留存设置转向留存设置这个转换期间，网络发生抖动，继续使用的上一轮的IP地址
+					// 针对这类情况，宽大处理，直接设置时间戳为当前时间
 					existingIPs[addr] = struct{}{}
 					finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: addr, LastSeenTime: &now})
 				}
 			}
 
-			// 2) 追回已被 updateFQDNStatuses 彻底剔除（如超时清空）、但依然处于 Retention 容忍期内的历史 IP
+			// 没有出现在本轮查询中的那些IP，但依然处于上一轮IP列表中，且没有失效的，加入finalEntries留存
+			
+			// 首先判断本轮的这个FQDN是否在上一轮有记录
 			if oldMap, ok := oldTimestamps[fqdn]; ok {
+				// 有记录，就逐个取每个记录的地址和时间戳
 				for oldAddr, oldTs := range oldMap {
+					// 如果在之前遍历的时候未被处理过
 					if _, exists := existingIPs[oldAddr]; !exists {
+						// 时间戳在有效期内
 						if oldTs != nil && now.Time.Sub(oldTs.Time) <= retentionDuration {
 							finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: oldAddr, LastSeenTime: oldTs})
 						}
@@ -177,7 +206,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			fqdnStatus.Addresses = finalEntries
 		}		
 	} else {
-		// 未开启 Retention：强制抹平所有 LastSeenTime 实现纯净降级
+		// 未开启留存策略，强制抹平所有记录的时间戳
 		for i := range np.Status.FQDNs {
 			for j := range np.Status.FQDNs[i].Addresses {
 				np.Status.FQDNs[i].Addresses[j].LastSeenTime = nil
