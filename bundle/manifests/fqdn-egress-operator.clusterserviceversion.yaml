@@ -67,7 +67,7 @@ metadata:
     capabilities: Seamless Upgrades
     categories: Networking, Security, Monitoring
     containerImage: quay.io/turbosimone/fqdn-egress-operator:v1.0.7
-    createdAt: "2026-10-03T13:53:58Z"
+    createdAt: "2026-10-04T12:20:15Z"
     description: Creates and maintains NetworkPolicies that supports outbound flows
       based on FQDNs
     olm.skipRange: '>=1.0.0 <1.0.7'

@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"sort"
 	"time"
-	"sync"
 
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -34,6 +33,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -52,20 +52,12 @@ type DNSResolver interface {
 	) network.DNSResolverResultList
 }
 
-// AddressCacheEntry represents a single resolved IP address (CIDR) in the sliding window cache.
-type AddressCacheEntry struct {
-	LastSeen time.Time
-	CIDR     *v1alpha1.CIDR
-}
-
 type NetworkPolicyReconciler struct {
 	client.Client
 	Scheme                *runtime.Scheme
 	EventRecorder         record.EventRecorder
 	DNSResolver           DNSResolver
 	MaxConcurrentResolves int
-	SlidingWindowCache    sync.Map
-	UpstreamDNS           string
 }
 
 // +kubebuilder:rbac:groups=k8s.cni.cncf.io,resources=multi-networkpolicies,verbs=get;list;watch;create;update;patch;delete
@@ -86,8 +78,6 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	np := &v1alpha1.NetworkPolicy{}
 	if err := r.Get(ctx, req.NamespacedName, np); err != nil {
 		if errors.IsNotFound(err) {
-			// 策略删除后，要清空缓存
-			r.SlidingWindowCache.Delete(req.Namespace + "/" + req.Name)
 			return ctrl.Result{}, nil
 		}	
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -100,113 +90,101 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		ctx, resolutionTimeout, r.MaxConcurrentResolves, np.Spec.EnabledNetworkType, np.FQDNs(),
 	)
 
-	// 增加滑动窗口缓存实现代码
 	rawResolvedCount := int32(len(results.CIDRs()))
 	
-	windowDuration := time.Duration(0)
-	// 如果取到值，ok为true，值放到val，否则ok为false，val为""
-	if val, ok := np.Annotations["networking.turbosimone.com/sliding-window"]; ok {
-		// 如果字符串val成功转换为数字，则err为nil，值放到d，否则err含错误信息
-		if d, err := time.ParseDuration(val); err == nil {
-			windowDuration = d
-		} else {
-			logf.FromContext(ctx).Info("Invalid sliding window annotation format, ignored", "value", val, "error", err.Error())
-		}
-	}
-
-	if windowDuration > 0 {
-		cacheKey := np.Namespace + "/" + np.Name
-		
-		/* policyCache是用于缓存解析记录的结构体，内部数据组织方式类似如下
-		{
-		  "open.feishu.cn": {
-			"1.1.1.1": {
-			"LastSeen": "10:00:00",
-			"CIDR": <存放1.1.1.1所对应的CIDR格式解析结果的指针>
-			},
-			"2.2.2.2": {
-			"LastSeen": "10:00:00",
-			"CIDR": <存放2.2.2.2所对应的CIDR格式解析结果的指针>
-			}
-		  }
-		}*/
-
-		// map[v1alpha1.FQDN]对应于open.feish.cn
-		// map[string]对应于1.1.1.1、2.2.2.2
-		var policyCache map[v1alpha1.FQDN]map[string]AddressCacheEntry
-		// 如果存在缓存，则取出来；如果没有缓存，意味着是第一次解析，构造一个和域名数量大小一样的缓存
-		if v, ok := r.SlidingWindowCache.Load(cacheKey); ok {
-			policyCache = v.(map[v1alpha1.FQDN]map[string]AddressCacheEntry)
-		} else {
-			policyCache = make(map[v1alpha1.FQDN]map[string]AddressCacheEntry, len(results))
-		}
-
-		now := time.Now()
-
-		// 用于保存当前策略中还生效中的域名
-		validFQDNs := make(map[v1alpha1.FQDN]struct{}, len(results))
-
-		for _, result := range results {
-			// 遇到网络超时或错误导致查询结果为0时，跳过滑动窗口，交给原生的RetryTimeoutSeconds机制兜底
-			if len(result.CIDRs) == 0 {
-				// 即使本次没有查询结果，它也是生效中的域名，必须登记并保活
-				validFQDNs[result.FQDN] = struct{}{}
-				continue
-			}
-
-			fqdn := result.FQDN
-			// 正常查出有结果的生效中的域名，登记在册
-			validFQDNs[fqdn] = struct{}{}
-			// 还没有缓存，就把这次解析的结果放入缓存，开辟结果数量大小的缓存条目
-			if policyCache[fqdn] == nil {
-				policyCache[fqdn] = make(map[string]AddressCacheEntry, len(result.CIDRs))
-			}
-
-			// 这段代码有两个目的
-			// 第一个目的是把这次查询获得的结果放入currentCIDRStrs，currentCIDRStrs相当于字典，可用于下一步的对比
-			// 第二个目的是填充缓存，如果缓存中存在条目，则更新它，如果缓存中不存在条目，则追加它，这个是policyCache[fqdn][ipStr]代码精妙的地方
-			currentCIDRStrs := make(map[string]struct{}, len(result.CIDRs))
-			for _, cidr := range result.CIDRs {
-				ipStr := cidr.IP.String()
-				currentCIDRStrs[ipStr] = struct{}{}
-				policyCache[fqdn][ipStr] = AddressCacheEntry{
-					LastSeen: now,
-					CIDR:     cidr,
-				}
-			}
-
-			// 现在我们在policyCache中拥有全量的记录，每个记录都带着时间戳，而在currentCIDRStrs则是本次查询的记录
-
-			// 这段代码有连个目的
-			// 第一个目的是清理过期IP，已经超过设定时间再也没在查询中出现过的IP，一律删除
-			// 第二个目的是把还没超过设定时间但不在本次查询记录中的IP，加回要返回的结果中，实现平滑过渡
-			for ipStr, entry := range policyCache[fqdn] {
-				if now.Sub(entry.LastSeen) > windowDuration {
-					delete(policyCache[fqdn], ipStr)
-				} else {
-					if _, exists := currentCIDRStrs[ipStr]; !exists {
-            			result.CIDRs = append(result.CIDRs, entry.CIDR)
-        			}
-				}
-			}
-		}
-
-		// 循环结束，准备存入总池子前，清理掉被用户从策略中删掉的僵尸域名
-		for cachedFQDN := range policyCache {
-			if _, exists := validFQDNs[cachedFQDN]; !exists {
-				delete(policyCache, cachedFQDN)
-			}
-		}		
-
-		// 写回缓存
-		r.SlidingWindowCache.Store(cacheKey, policyCache)
-	}	
-
-	// 增加结束
-
 	np.Status.FQDNs = updateFQDNStatuses(
 		r.EventRecorder, np, np.Status.FQDNs, results, int(np.Spec.RetryTimeoutSeconds),
 	)
+
+	// 增加留存IP处理逻辑
+
+	retentionDuration := time.Duration(0)
+	// 如果取到值，ok为true，值放到val，否则ok为false，val为""
+	if val, ok := np.Annotations["networking.turbosimone.com/retention-period"]; ok {
+		// 如果字符串val成功转换为数字，则err为nil，值放到d，否则err含错误信息
+		if d, err := time.ParseDuration(val); err == nil {
+			retentionDuration = d
+		} else {
+			logf.FromContext(ctx).Info("Invalid retention-period annotation format, ignored", "value", val, "error", err.Error())
+		}
+	}
+
+	if retentionDuration > 0 {
+		now := metav1.Now()
+
+		// a) 直接利用开头的 previous 提取旧时间戳索引
+		oldTimestamps := make(map[v1alpha1.FQDN]map[string]*metav1.Time, len(previous.Status.FQDNs))
+		for _, oldFqdn := range previous.Status.FQDNs {
+			ipMap := make(map[string]*metav1.Time, len(oldFqdn.Addresses))
+			for _, entry := range oldFqdn.Addresses {
+				ipMap[entry.Address] = entry.LastSeenTime
+			}
+			oldTimestamps[oldFqdn.FQDN] = ipMap
+		}
+		
+		// b) 索引本轮 DNS 成功解析到的 IP
+		freshlyResolved := make(map[v1alpha1.FQDN]map[string]struct{}, len(results))
+		for _, res := range results {
+			if res.Status == v1alpha1.NetworkPolicyResolutionSuccess {
+				ipMap := make(map[string]struct{}, len(res.CIDRs))
+				for _, cidr := range res.CIDRs {
+					ipMap[cidr.String()] = struct{}{}
+				}
+				freshlyResolved[res.FQDN] = ipMap
+			}
+		}
+		
+		// c) 补全现有 IP 时间戳 + 追回在 retention 容忍期内的历史 IP
+		for i := range np.Status.FQDNs {
+			fqdnStatus := &np.Status.FQDNs[i]
+			fqdn := fqdnStatus.FQDN
+
+			existingIPs := make(map[string]struct{}, len(fqdnStatus.Addresses))
+			var finalEntries []v1alpha1.AddressEntry
+
+			// 1) 处理 updateFQDNStatuses 留下的 IP（包含本轮新查出的，以及重试期内留存的）
+			for _, entry := range fqdnStatus.Addresses {
+				addr := entry.Address
+
+				if _, isFresh := freshlyResolved[fqdn][addr]; isFresh {
+					// 本轮 DNS 成功解析出来的：更新时间戳为当前时间，100% 保留
+					existingIPs[addr] = struct{}{}
+					finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: addr, LastSeenTime: &now})
+				} else if oldTs, ok := oldTimestamps[fqdn][addr]; ok && oldTs != nil {
+					// DNS 故障/未查出，但还在 Retention 容忍期内的 IP：保留并继承旧时间戳
+					if now.Time.Sub(oldTs.Time) <= retentionDuration {
+						existingIPs[addr] = struct{}{}
+						finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: addr, LastSeenTime: oldTs})
+					}
+				} else {
+					// 兜底：无旧时间戳的新 IP，赋予当前时间并保留
+					existingIPs[addr] = struct{}{}
+					finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: addr, LastSeenTime: &now})
+				}
+			}
+
+			// 2) 追回已被 updateFQDNStatuses 彻底剔除（如超时清空）、但依然处于 Retention 容忍期内的历史 IP
+			if oldMap, ok := oldTimestamps[fqdn]; ok {
+				for oldAddr, oldTs := range oldMap {
+					if _, exists := existingIPs[oldAddr]; !exists {
+						if oldTs != nil && now.Time.Sub(oldTs.Time) <= retentionDuration {
+							finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: oldAddr, LastSeenTime: oldTs})
+						}
+					}
+				}
+			}
+
+			fqdnStatus.Addresses = finalEntries
+		}		
+	} else {
+		// 未开启 Retention：强制抹平所有 LastSeenTime 实现纯净降级
+		for i := range np.Status.FQDNs {
+			for j := range np.Status.FQDNs[i].Addresses {
+				np.Status.FQDNs[i].Addresses[j].LastSeenTime = nil
+			}
+		}
+	}
+	// 增加结束
 
 	mnp := np.ToMultiNetworkPolicy(np.Status.FQDNs)
 
@@ -303,7 +281,9 @@ func (r *NetworkPolicyReconciler) updateStatusIfNeeded(ctx context.Context, np *
 			return string(status.FQDNs[i].FQDN) < string(status.FQDNs[j].FQDN)
 		})
 		for i := range status.FQDNs {
-			sort.Strings(status.FQDNs[i].Addresses)
+			sort.Slice(status.FQDNs[i].Addresses, func(a, b int) bool {
+				return status.FQDNs[i].Addresses[a].Address < status.FQDNs[i].Addresses[b].Address
+			})			
 		}
 	}
 

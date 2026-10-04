@@ -248,10 +248,10 @@ spec:
                 - value
                 x-kubernetes-list-type: map
               resolutionTimeoutSeconds:
-                default: 3
+                default: 2
                 description: "ResolutionTimeoutSeconds defines the maximum timeout
                   duration for a single FQDN during DNS queries.\n\nConfiguration:\n\t▸
-                  Default: 3s\n\t▸ Range: 1s to 60s\n\t▸ Constraint: Must be strictly
+                  Default: 2s\n\t▸ Range: 1s to 60s\n\t▸ Constraint: Must be strictly
                   less than TTLSeconds"
                 format: int32
                 maximum: 60
@@ -375,10 +375,26 @@ spec:
                   properties:
                     addresses:
                       description: |-
-                        Addresses is the list of resolved IP addresses for the given FQDN.
+                        Addresses is the list of resolved IP addresses and their retention time for the given FQDN.
+                        When retention duration is enabled, this ledger retains previously resolved IPs until they exceed the duration limit.
                         This list is cleared immediately upon a non-transient error, or if a transient error persists longer than the limit specified by NetworkPolicySpec.RetryTimeoutSeconds.
                       items:
-                        type: string
+                        description: AddressEntry represents a single resolved IP/CIDR
+                          record along with its last seen time for IP retention.
+                        properties:
+                          address:
+                            description: Address specifies the resolved IP block in
+                              standard CIDR notation (e.g., "112.95.8.11/32").
+                            type: string
+                          lastSeenTime:
+                            description: |-
+                              LastSeenTime records the exact time when this IP was last successfully resolved.
+                              It is nil when retention-duration is disabled.
+                            format: date-time
+                            type: string
+                        required:
+                        - address
+                        type: object
                       type: array
                     failingSince:
                       description: |-

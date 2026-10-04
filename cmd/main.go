@@ -239,7 +239,6 @@ func main() {
 		EventRecorder:         mgr.GetEventRecorderFor("fqdn-egress-controller"),
 		DNSResolver:           network.NewDNSResolver(upstreamDNS),
 		MaxConcurrentResolves: maxConcurrentResolves,
-		UpstreamDNS:           upstreamDNS,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NetworkPolicy")
 		os.Exit(1)

@@ -201,13 +201,13 @@ type NetworkPolicySpec struct {
 	// ResolutionTimeoutSeconds defines the maximum timeout duration for a single FQDN during DNS queries.
 	//
 	// Configuration:
-	//	▸ Default: 3s
+	//	▸ Default: 2s
 	//	▸ Range: 1s to 60s
 	//	▸ Constraint: Must be strictly less than TTLSeconds
 	//
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=60
-	// +kubebuilder:default:=3
+	// +kubebuilder:default:=2
 	ResolutionTimeoutSeconds int32 `json:"resolutionTimeoutSeconds,omitempty"`
 
 	// RetryTimeoutSeconds defines the tolerance duration when FQDN resolution errors occur. Within this time window, previously successfully resolved IP addresses will be retained in the underlying network policy to prevent intermittent DNS failures from disrupting business traffic.
@@ -312,6 +312,16 @@ func (r NetworkPolicyResolutionReason) Transient() bool {
 	}
 }
 
+// AddressEntry represents a single resolved IP/CIDR record along with its last seen time for IP retention.
+type AddressEntry struct {
+	// Address specifies the resolved IP block in standard CIDR notation (e.g., "112.95.8.11/32").
+	Address string `json:"address"`
+	// LastSeenTime records the exact time when this IP was last successfully resolved.
+	// It is nil when retention-duration is disabled.
+	// +optional	
+	LastSeenTime *metav1.Time `json:"lastSeenTime,omitempty"`
+}
+
 // FQDNStatus defines the resolution status of a specific FQDN.
 type FQDNStatus struct {
 	// FQDN specifies the exact fully qualified domain name that this resolution status tracks.
@@ -326,9 +336,10 @@ type FQDNStatus struct {
 	Reason NetworkPolicyResolutionReason `json:"reason,omitempty"`
 	// Message is a human-readable description detailing the reason for the current status.
 	Message string `json:"message,omitempty"`
-	// Addresses is the list of resolved IP addresses for the given FQDN.
+	// Addresses is the list of resolved IP addresses and their retention time for the given FQDN.
+	// When retention duration is enabled, this ledger retains previously resolved IPs until they exceed the duration limit.
 	// This list is cleared immediately upon a non-transient error, or if a transient error persists longer than the limit specified by NetworkPolicySpec.RetryTimeoutSeconds.
-	Addresses []string `json:"addresses,omitempty"`
+	Addresses []AddressEntry `json:"addresses,omitempty"`
 }
 
 // NetworkPolicyStatus defines the observed state of NetworkPolicy.

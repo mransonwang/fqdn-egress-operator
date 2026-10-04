@@ -104,10 +104,10 @@ func getPeers(fqdns []FQDN, ips map[FQDN]*FQDNStatus, globalBlock bool, ruleBloc
 
 	for _, fqdn := range fqdns {
 		if status, ok := ips[fqdn]; ok {
-			for _, addr := range status.Addresses {
-				if isAllowed(addr, globalBlock, ruleBlock) {
+			for _, entry := range status.Addresses {
+				if isAllowed(entry.Address, globalBlock, ruleBlock) {
 					peers = append(peers, mnetv1beta1.MultiNetworkPolicyPeer{
-						IPBlock: &mnetv1beta1.IPBlock{CIDR: addr},
+						IPBlock: &mnetv1beta1.IPBlock{CIDR: entry.Address},
 					})
 				}
 			}
@@ -246,7 +246,14 @@ func (f *FQDNStatus) Update(
 	if reason == NetworkPolicyResolutionSuccess {
 		// 只要成功，立刻重置失败时间戳为nil
 		f.FailingSince = nil
-		f.Addresses = CIDRList(cidrs).Strings()
+
+		entries := make([]AddressEntry, 0, len(cidrs))
+		for _, cidr := range cidrs {
+			entries = append(entries, AddressEntry{
+				Address: cidr.String(),
+			})
+		}
+		f.Addresses = entries
 	} else if reason.Transient() {
 		// 如果是瞬时错误，而且是第一次出错
 		if f.FailingSince == nil {
@@ -258,7 +265,7 @@ func (f *FQDNStatus) Update(
 			deadline := f.FailingSince.Add(time.Duration(retryTimeoutSeconds) * time.Second)
 			if time.Now().After(deadline) {
 				if len(f.Addresses) > 0 {
-					f.Addresses = []string{}
+					f.Addresses = []AddressEntry{}
 					cleared = true
 				}
 			}
@@ -266,7 +273,7 @@ func (f *FQDNStatus) Update(
 	} else {
 		// 永久性错误
 		if len(f.Addresses) > 0 {
-			f.Addresses = []string{}
+			f.Addresses = []AddressEntry{}
 			cleared = true
 		}
 		if f.FailingSince == nil {
