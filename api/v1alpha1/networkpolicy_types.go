@@ -312,14 +312,14 @@ func (r NetworkPolicyResolutionReason) Transient() bool {
 	}
 }
 
-// AddressEntry represents a single resolved IP/CIDR record along with its last seen time for IP retention.
+// AddressEntry represents a single resolved IP/CIDR record along with its missing time for IP retention.
 type AddressEntry struct {
 	// Address specifies the resolved IP block in standard CIDR notation (e.g., "112.95.8.11/32").
 	Address string `json:"address"`
-	// LastSeenTime records the exact time when this IP was last successfully resolved.
-	// It is nil when retention-duration is disabled.
+	// MissingSince records the exact time when this IP was first found missing from DNS resolution results.
+	// It is nil when the IP is actively resolved or when retention-period is disabled.
 	// +optional	
-	LastSeenTime *metav1.Time `json:"lastSeenTime,omitempty"`
+	MissingSince *metav1.Time `json:"missingSince,omitempty"`
 }
 
 // FQDNStatus defines the resolution status of a specific FQDN.

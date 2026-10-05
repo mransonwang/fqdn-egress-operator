@@ -115,22 +115,22 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// 利用开头的previous提取旧时间戳索引，为快速定位IP做准备
 		/*
 		map[v1alpha1.FQDN]map[string]*metav1.Time{
-			"api.github.com": {
-				"140.82.112.4/32": &10:00:00,
-				"140.82.112.5/32": &10:05:00,
-			},
 			"open.feishu.cn": {
-				"112.95.8.11/32": &10:08:00,
+				"112.95.8.11/32": nil,							// nil表示上一轮在线
+				"112.95.8.12/32": &metav1.Time{Time: 09:30},	// 非nil表示上一轮已掉线及掉线开始时间
 			},
-		}
+			"api.github.com": {
+				"140.82.112.4/32": nil,
+			},
+		}		
 		*/
-		oldTimestamps := make(map[v1alpha1.FQDN]map[string]*metav1.Time, len(previous.Status.FQDNs))
+		oldMissingMap := make(map[v1alpha1.FQDN]map[string]*metav1.Time, len(previous.Status.FQDNs))
 		for _, oldFqdn := range previous.Status.FQDNs {
 			ipMap := make(map[string]*metav1.Time, len(oldFqdn.Addresses))
 			for _, entry := range oldFqdn.Addresses {
-				ipMap[entry.Address] = entry.LastSeenTime
+				ipMap[entry.Address] = entry.MissingSince
 			}
-			oldTimestamps[oldFqdn.FQDN] = ipMap
+			oldMissingMap[oldFqdn.FQDN] = ipMap
 		}
 		
 		// 索引本轮DNS成功解析到的IP，为快速定位IP做准备
@@ -169,35 +169,54 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 				// freshlyResolved发挥威力了，可以很快定位到给定IP是否在其内
 				if _, isFresh := freshlyResolved[fqdn][addr]; isFresh {
-					// 属于本轮DNS成功解析出来的，更新时间戳为当前时间，留存
+					// 属于本轮DNS查询结果的，更新MissingSince为nil，留存
 					existingIPs[addr] = struct{}{}
-					finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: addr, LastSeenTime: &now})
-				} else if oldTs, ok := oldTimestamps[fqdn][addr]; ok && oldTs != nil {
-					// 说明这个IP地址是DNS由于网络抖动未查出，继续使用的上一轮的IP地址
-					// 对比时间，如果还在有效期内，留存；如果已超出有效期，则什么也不做，相当于丢弃
-					if now.Time.Sub(oldTs.Time) <= retentionDuration {
-						existingIPs[addr] = struct{}{}
-						finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: addr, LastSeenTime: oldTs})
-					}
+					finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: addr, MissingSince: nil})
 				} else {
-					// 既不是本轮查出来的，也没有旧时间戳，说明是由非留存设置转向留存设置这个转换期间，网络发生抖动，继续使用的上一轮的IP地址
-					// 针对这类情况，宽大处理，直接设置时间戳为当前时间
-					existingIPs[addr] = struct{}{}
-					finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: addr, LastSeenTime: &now})
+					// 凡是不在本轮DNS查询结果的，进入本分支
+					var missingTime *metav1.Time
+
+					// 存在于上一轮记录中的，且已掉线的
+					// oldMissingMap发挥威力了，可以很快定位到给定IP是否在其内
+					if oldTs, ok := oldMissingMap[fqdn][addr]; ok && oldTs != nil {
+						// 继续沿用旧的掉线起点时间
+						missingTime = oldTs
+					} else {
+						// 否则属于本轮开始掉线的，使用此刻作为掉线起点时间
+						missingTime = &now
+					}
+
+					// 最后拿missingTime和当前时间做对比，还在留存期内的，加入finalEntries，否则没有进一步动作，相当于丢弃
+					if now.Time.Sub(missingTime.Time) <= retentionDuration {
+						existingIPs[addr] = struct{}{}
+						finalEntries = append(finalEntries, v1alpha1.AddressEntry{
+							Address:      addr,
+							MissingSince: missingTime,
+						})
+					}
 				}
 			}
 
-			// 没有出现在本轮查询中的那些IP，但依然处于上一轮IP列表中，且没有失效的，加入finalEntries留存
+			// 没有出现在本轮查询中的IP，但依然处于上一轮IP列表中的，有可能有MissingSince，也有可能没有MissingSince，这里要进行处理
 			
 			// 首先判断本轮的这个FQDN是否在上一轮有记录
-			if oldMap, ok := oldTimestamps[fqdn]; ok {
-				// 有记录，就逐个取每个记录的地址和时间戳
+			if oldMap, ok := oldMissingMap[fqdn]; ok {
+				// 有记录，就逐个取每个记录的地址和missingSince
 				for oldAddr, oldTs := range oldMap {
-					// 如果在之前遍历的时候未被处理过
+					// 只处理之前遍历的时候未被处理过的
 					if _, exists := existingIPs[oldAddr]; !exists {
-						// 时间戳在有效期内
-						if oldTs != nil && now.Time.Sub(oldTs.Time) <= retentionDuration {
-							finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: oldAddr, LastSeenTime: oldTs})
+						missingTime := oldTs
+						// missingTime为nil，代表是在上轮被解析出来的，但是这轮解析没出现，代表本轮开始掉线的，使用此刻作为掉线起点时间
+						if missingTime == nil {
+							missingTime = &now
+						}
+
+						// missingTime不为nil，没有额外的处理环节，直接跳到下面代码
+
+						// 最后拿missingTime和当前时间做对比，还在留存期内的，加入finalEntries，否则没有进一步动作，相当于丢弃
+						if now.Time.Sub(missingTime.Time) <= retentionDuration {
+							existingIPs[oldAddr] = struct{}{}
+							finalEntries = append(finalEntries, v1alpha1.AddressEntry{Address: oldAddr, MissingSince: missingTime})
 						}
 					}
 				}
@@ -209,7 +228,7 @@ func (r *NetworkPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// 未开启留存策略，强制抹平所有记录的时间戳
 		for i := range np.Status.FQDNs {
 			for j := range np.Status.FQDNs[i].Addresses {
-				np.Status.FQDNs[i].Addresses[j].LastSeenTime = nil
+				np.Status.FQDNs[i].Addresses[j].MissingSince = nil
 			}
 		}
 	}
